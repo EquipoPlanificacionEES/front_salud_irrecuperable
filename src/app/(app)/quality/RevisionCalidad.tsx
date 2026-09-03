@@ -12,7 +12,7 @@ interface Caso {
 }
 
 // Control de calidad: revisa expedientes y puede devolverlos al médico con un motivo.
-// Uso esporádico; por ahora es solo front contra el mock.
+// Uso esporádico. POST /api/quality/devolver.
 export function RevisionCalidad() {
   const [casos, setCasos] = useState<Caso[]>([]);
   const [abierto, setAbierto] = useState<number | null>(null);

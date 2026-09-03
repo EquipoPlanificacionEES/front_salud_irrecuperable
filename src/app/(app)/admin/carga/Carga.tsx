@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-// Bandeja de carga del administrador: elige una semana habilitada y registra los expedientes (TSI-206).
+// Bandeja de carga del administrador: elige una semana habilitada y dispara la descarga (TSI-206).
 
 interface Semana {
   id: number;
@@ -139,8 +139,7 @@ export function Carga() {
       )}
 
       <p className="text-xs text-zinc-400">
-        Mock: simula la descarga del BOT creando <code>casos</code> (Case) y{" "}
-        <code>caso_documentos</code> (CaseDocument). Con backend real lo hará el bot en PostgreSQL.
+        La descarga la ejecuta el backend (Case + CaseDocument). <code>POST /api/carga</code>.
       </p>
     </div>
   );

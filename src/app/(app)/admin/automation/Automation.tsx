@@ -125,8 +125,8 @@ export function Automation() {
         <Panel key={p.slug} {...p} />
       ))}
       <p className="text-xs text-zinc-400">
-        Mock del módulo <code>modules/automation/</code> (TSI-105). El progreso se simula por tiempo.
-        Endpoints: <code>/api/automation/&#123;ingest|analysis&#125;/&#123;start|stop|status&#125;</code>.
+        Módulo <code>automation</code> (TSI-105) — endpoints{" "}
+        <code>/api/automation/&#123;ingest|analysis&#125;/&#123;start|stop|status&#125;</code>.
       </p>
     </div>
   );

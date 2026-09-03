@@ -8,7 +8,7 @@ import type { Rol } from "@/lib/roles";
 // El estado viene del servidor (cookie httpOnly); aquí no se guarda ninguna credencial.
 
 export interface SesionCliente {
-  uid: number;
+  uid: string;
   rol: Rol;
   nombre: string;
   region: string | null;

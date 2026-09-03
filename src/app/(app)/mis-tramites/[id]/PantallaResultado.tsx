@@ -136,7 +136,12 @@ export function PantallaResultado({ id }: { id: number }) {
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-zinc-900">Informe generado — {d.id_tramite}</h3>
+          <h3 className="font-semibold text-zinc-900">
+            Informe generado
+            <span className="ml-2 font-mono text-xs font-normal text-zinc-500">
+              Nº caso {d.id} · Nº búsqueda {d.id_tramite}
+            </span>
+          </h3>
           <div className="flex gap-2">
             <a
               href={`/api/casos/${id}/informe?formato=pdf`}

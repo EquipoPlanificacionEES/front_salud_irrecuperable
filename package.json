@@ -1,5 +1,5 @@
 {
-  "name": "front-bd-salud-irrecuperable",
+  "name": "front-salud-irrecuperable",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,27 +8,21 @@
     "start": "next start -p 3010",
     "lint": "next lint",
     "db:init": "node BD/seed.mjs",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:validate": "prisma validate",
+    "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
-    "bcryptjs": "^3.0.3",
-    "docx": "^9.7.1",
     "jose": "^6.2.10",
     "next": "^16.3.4",
-    "pdf-lib": "^1.17.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "server-only": "^0.0.1"
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.7.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "bcryptjs": "^3.0.3",
     "prisma": "^6.19.3",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.3"

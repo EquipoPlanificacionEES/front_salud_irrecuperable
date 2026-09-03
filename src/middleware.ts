@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verificarToken } from "@/lib/session";
+import { verificarToken, COOKIE_SESION } from "@/lib/session";
 import { HOME_POR_ROL, puedeAcceder } from "@/lib/roles";
 
 // Guarda de rutas (Edge). Exige sesión y aplica los permisos por rol de `roles.ts`.
@@ -9,7 +9,7 @@ const PUBLICAS = ["/login", "/api/auth/login"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const sesion = await verificarToken(req.cookies.get("sesion")?.value);
+  const sesion = await verificarToken(req.cookies.get(COOKIE_SESION)?.value);
 
   if (PUBLICAS.includes(pathname)) {
     if (pathname === "/login" && sesion) {

@@ -1,7 +1,5 @@
-// TSI-102 — Esquema PostgreSQL + Prisma.
-// Es el esquema de referencia de la BD (destino real). El front sigue corriendo sobre el
-// mock de `BD/` (SQLite) hasta que DATABASE_URL apunte a un PostgreSQL real; ahí se corre
-// `prisma migrate` y se cambia `getDb()` por el cliente Prisma.
+// TSI-102 — Esquema PostgreSQL + Prisma para el backend.
+// El front no lo usa (consume el backend vía proxy). Se conserva como contrato de datos.
 // Mantener en sync con BD/schema.sql.
 
 generator client {
@@ -22,17 +20,7 @@ model Rol {
   @@map("roles")
 }
 
-model Region {
-  id                  Int                  @id @default(autoincrement())
-  codigo              String               @unique // RM, OHIGGINS, BIOBIO, ANTOFAGASTA
-  nombre              String
-  usuarios            Usuario[]
-  institutionProfiles InstitutionProfile[]
-  casos               Caso[]
-  botRuns             BotRun[]
-
-  @@map("regiones")
-}
+// Una sola región en este MVP: `region` es un String, no una tabla.
 
 model Usuario {
   id           Int          @id @default(autoincrement())
@@ -40,28 +28,25 @@ model Usuario {
   correo       String       @unique
   passwordHash String       @map("password_hash")
   rolId        Int          @map("rol_id")
-  regionId     Int?         @map("region_id")
+  region       String? // NULL = alcance nacional (admin)
   firma        String? // TSI-303: data URL PNG/JPG de la firma
   activo       Boolean      @default(true)
   creadoEn     DateTime     @default(now()) @map("creado_en")
   rol          Rol          @relation(fields: [rolId], references: [id])
-  region       Region?      @relation(fields: [regionId], references: [id])
   devoluciones Devolucion[]
   botRuns      BotRun[]
   resoluciones Resolucion[]
 
-  @@index([regionId])
   @@map("usuarios")
 }
 
 model InstitutionProfile {
   id             Int               @id @default(autoincrement())
-  regionId       Int?              @map("region_id")
+  region         String?
   nombre         String
   nucleoNacional Boolean           @default(false) @map("nucleo_nacional")
   configJson     Json              @default("{}") @map("config_json")
   creadoEn       DateTime          @default(now()) @map("creado_en")
-  region         Region?           @relation(fields: [regionId], references: [id])
   rules          InstitutionRule[]
 
   @@map("institution_profile")
@@ -94,9 +79,9 @@ model Semana {
 
 model Caso {
   id              Int             @id @default(autoincrement())
-  idTramite       String          @unique @map("id_tramite")
+  idTramite       String          @unique @map("id_tramite") // Nº de búsqueda del médico
   semanaId        Int             @map("semana_id")
-  regionId        Int?            @map("region_id")
+  region          String?
   solicitante     String          @default("")
   estado          String          @default("DESCARGADO") // DESCARGADO | ENVIADO_BOT | INFORME_RECIBIDO
   informeJson     Json?           @map("informe_json")
@@ -104,7 +89,6 @@ model Caso {
   estadoFlujo     String?         @map("estado_flujo") // EN_REVISION | COMPLETADO
   creadoEn        DateTime        @default(now()) @map("creado_en")
   semana          Semana          @relation(fields: [semanaId], references: [id])
-  region          Region?         @relation(fields: [regionId], references: [id])
   documentos      CasoDocumento[]
   devoluciones    Devolucion[]
   resoluciones    Resolucion[]
@@ -146,7 +130,7 @@ model Devolucion {
 model BotRun {
   id              Int      @id @default(autoincrement())
   run             Int // correlativo por administrador
-  regionId        Int?     @map("region_id")
+  region          String?
   semanas         String   @default("") // "1,2,3"
   encontrados     Int      @default(0)
   descargados     Int      @default(0)
@@ -154,12 +138,10 @@ model BotRun {
   duracionSeg     Int      @default(0) @map("duracion_seg")
   totalCasos      Int      @default(0) @map("total_casos")
   totalDocumentos Int      @default(0) @map("total_documentos")
-  destino         String   @default("MOCK")
   ok              Boolean  @default(true)
   detalle         String   @default("")
   creadoPor       Int?     @map("creado_por")
   creadoEn        DateTime @default(now()) @map("creado_en")
-  region          Region?  @relation(fields: [regionId], references: [id])
   autor           Usuario? @relation(fields: [creadoPor], references: [id])
 
   @@index([creadoPor, creadoEn])

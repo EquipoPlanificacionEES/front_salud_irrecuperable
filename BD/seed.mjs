@@ -1,4 +1,5 @@
-// Recrea la BD mock desde BD/schema.sql y siembra datos demo.
+// Crea BD/app.db (SQLite) desde BD/schema.sql y siembra los usuarios base.
+// Utilidad de referencia para el equipo de backend — el front NO usa esta BD.
 // Uso:  npm run db:init
 import { DatabaseSync } from "node:sqlite";
 import { rmSync, existsSync, readFileSync } from "node:fs";
@@ -29,34 +30,27 @@ const roles = [
 const insRol = db.prepare("INSERT INTO roles (codigo, nombre) VALUES (?, ?)");
 for (const r of roles) insRol.run(r.codigo, r.nombre);
 
-const regiones = [
-  { codigo: "RM", nombre: "Región Metropolitana" },
-  { codigo: "OHIGGINS", nombre: "O'Higgins" },
-  { codigo: "BIOBIO", nombre: "Biobío" },
-  { codigo: "ANTOFAGASTA", nombre: "Antofagasta" },
-];
-const insReg = db.prepare("INSERT INTO regiones (codigo, nombre) VALUES (?, ?)");
-for (const g of regiones) insReg.run(g.codigo, g.nombre);
+// Una sola región en este MVP: atributo TEXT, no tabla.
+const REGION = "RM";
 
 const idRol = (c) => db.prepare("SELECT id FROM roles WHERE codigo = ?").get(c).id;
-const idReg = (c) => db.prepare("SELECT id FROM regiones WHERE codigo = ?").get(c).id;
 
 const insProf = db.prepare(
-  "INSERT INTO institution_profile (region_id, nombre, nucleo_nacional) VALUES (?, ?, ?)",
+  "INSERT INTO institution_profile (region, nombre, nucleo_nacional) VALUES (?, ?, ?)",
 );
 insProf.run(null, "Núcleo Nacional", 1);
-for (const g of regiones) insProf.run(idReg(g.codigo), `Perfil ${g.nombre}`, 0);
+insProf.run(REGION, `Perfil ${REGION}`, 0);
 
 const usuarios = [
-  { nombre: "Dra. Médico Demo", correo: "medico@salud.local", rol: "medico", region: "RM", pass: "Medico2026#" },
-  { nombre: "Analista Calidad Demo", correo: "calidad@salud.local", rol: "calidad", region: "RM", pass: "Calidad2026#" },
+  { nombre: "Dra. Médico Demo", correo: "medico@salud.local", rol: "medico", region: REGION, pass: "Medico2026#" },
+  { nombre: "Analista Calidad Demo", correo: "calidad@salud.local", rol: "calidad", region: REGION, pass: "Calidad2026#" },
   { nombre: "Administrador Demo", correo: "admin@salud.local", rol: "admin", region: null, pass: "Admin2026#" },
 ];
 const insUser = db.prepare(
-  "INSERT INTO usuarios (nombre, correo, password_hash, rol_id, region_id) VALUES (?, ?, ?, ?, ?)",
+  "INSERT INTO usuarios (nombre, correo, password_hash, rol_id, region) VALUES (?, ?, ?, ?, ?)",
 );
 for (const u of usuarios) {
-  insUser.run(u.nombre, u.correo, bcrypt.hashSync(u.pass, 12), idRol(u.rol), u.region ? idReg(u.region) : null);
+  insUser.run(u.nombre, u.correo, bcrypt.hashSync(u.pass, 12), idRol(u.rol), u.region);
   console.log(`  ✓ ${u.rol.padEnd(8)} ${u.correo.padEnd(22)} region=${u.region ?? "—"}  (pass: ${u.pass})`);
 }
 
@@ -85,7 +79,7 @@ insProc.run("INGEST");
 insProc.run("ANALYSIS");
 
 console.log(
-  `\n  roles: ${roles.length} · regiones: ${regiones.length} · perfiles: ${regiones.length + 1} · semanas: ${TOTAL_SEMANAS} (1..${SEMANA_ACTUAL} habilitadas)`,
+  `\n  roles: ${roles.length} · región: ${REGION} · semanas: ${TOTAL_SEMANAS} (1..${SEMANA_ACTUAL} habilitadas)`,
 );
 console.log("BD lista en", DB_PATH);
 db.close();

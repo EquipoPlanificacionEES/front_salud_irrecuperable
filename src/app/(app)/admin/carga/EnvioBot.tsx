@@ -120,9 +120,9 @@ export function EnvioBot() {
       )}
 
       <p className="text-xs text-zinc-400">
-        El front arma el paquete (GET) y lo reenvía al bot (POST a <code>BOT_URL</code>; si no está
-        configurada, se simula y el informe se genera localmente). El bot crea Case + CaseDocument en
-        PostgreSQL. Cada envío queda en el <strong>Historial BOT</strong>.
+        <code>POST /api/bot/enviar</code> con las semanas seleccionadas. El bot del backend procesa
+        los expedientes y deja el informe en la bandeja del médico. Cada envío queda en el{" "}
+        <strong>Historial BOT</strong>.
       </p>
     </div>
   );

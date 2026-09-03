@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+const dev = process.env.NODE_ENV !== "production";
+
+// En desarrollo, Next/React necesitan 'unsafe-eval' (Fast Refresh, source maps).
+const scriptSrc = dev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'";
+
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -9,7 +14,7 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "connect-src 'self'",
@@ -21,7 +26,6 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // Oculta el indicador flotante de Next en desarrollo (el círculo con la "N").
   devIndicators: false,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

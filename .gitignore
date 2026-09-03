@@ -3,7 +3,7 @@ node_modules
 next-env.d.ts
 *.tsbuildinfo
 
-# Base de datos local (mock) — el archivo con datos no se versiona; se regenera con `npm run db:init`
+# BD de referencia (SQLite generado) — se regenera con `npm run db:init`
 BD/*.db
 BD/*.db-journal
 BD/*.db-wal
