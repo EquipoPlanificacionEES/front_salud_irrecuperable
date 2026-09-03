@@ -1,0 +1,56 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { NAV } from "@/lib/roles";
+import { useSesion } from "./SesionProvider";
+
+// Layout visual compartido (TSI-202) — cabecera + navegación, paleta ATM de la plataforma actual.
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const { sesion, cerrarSesion } = useSesion();
+  const pathname = usePathname();
+  const items = NAV.filter((i) => i.roles.includes(sesion.rol));
+
+  return (
+    <>
+      <header className="flex items-center justify-between border-b border-[var(--atm-linea)] bg-white px-6 py-4">
+        <div>
+          <h1 className="text-base font-semibold text-zinc-900">Plataforma de Calificación</h1>
+          <p className="text-sm text-zinc-500">
+            {sesion.nombre} · <span className="capitalize">{sesion.rol}</span>
+            {sesion.region ? ` · ${sesion.region}` : " · Nacional"}
+          </p>
+        </div>
+        <button
+          onClick={() => cerrarSesion()}
+          className="rounded-lg border border-[var(--atm-azul2)] px-3 py-1.5 text-sm font-medium text-[var(--atm-azul)] hover:bg-blue-50"
+        >
+          Cerrar sesión
+        </button>
+      </header>
+
+      <nav className="flex gap-1 overflow-x-auto border-b border-[var(--atm-linea)] bg-white px-6 pt-3">
+        {items.map((i) => {
+          const activa = pathname === i.href || pathname.startsWith(i.href + "/");
+          return (
+            <Link
+              key={i.href}
+              href={i.href}
+              className={`whitespace-nowrap rounded-t-lg px-3 py-2 text-sm font-medium ${
+                activa
+                  ? "border-b-2 border-[var(--atm-azul2)] text-[var(--atm-azul)]"
+                  : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              {i.etiqueta}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <main className="flex-1 bg-[var(--atm-fondo)] px-6 py-8">
+        <div className="mx-auto max-w-5xl">{children}</div>
+      </main>
+    </>
+  );
+}

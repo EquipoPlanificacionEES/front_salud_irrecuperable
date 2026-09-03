@@ -1,0 +1,21 @@
+node_modules
+.next
+next-env.d.ts
+*.tsbuildinfo
+
+# Base de datos local (mock) — el archivo con datos no se versiona; se regenera con `npm run db:init`
+BD/*.db
+BD/*.db-journal
+BD/*.db-wal
+BD/*.db-shm
+
+# Prisma client generado
+/prisma/generated
+
+# entornos
+.env
+.env.local
+.env*.local
+
+# Vercel
+.vercel

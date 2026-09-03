@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* Paleta ATM — misma referencia visual que la plataforma actual (EES---VERCEL). */
+  --atm-azul: #173a78;
+  --atm-azul2: #2878e5;
+  --atm-tinta: #172033;
+  --atm-gris: #64748b;
+  --atm-linea: #cbd5e1;
+  --atm-fondo: #f1f5f9;
+  --atm-panel: #ffffff;
+  --atm-ok: #166534;
+  --atm-obs: #9a3412;
+  --atm-mal: #991b1b;
+  --atm-th: #1e293b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}

@@ -1,0 +1,210 @@
+// TSI-102 — Esquema PostgreSQL + Prisma.
+// Es el esquema de referencia de la BD (destino real). El front sigue corriendo sobre el
+// mock de `BD/` (SQLite) hasta que DATABASE_URL apunte a un PostgreSQL real; ahí se corre
+// `prisma migrate` y se cambia `getDb()` por el cliente Prisma.
+// Mantener en sync con BD/schema.sql.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Rol {
+  id       Int       @id @default(autoincrement())
+  codigo   String    @unique // 'medico' | 'calidad' | 'admin'
+  nombre   String
+  usuarios Usuario[]
+
+  @@map("roles")
+}
+
+model Region {
+  id                  Int                  @id @default(autoincrement())
+  codigo              String               @unique // RM, OHIGGINS, BIOBIO, ANTOFAGASTA
+  nombre              String
+  usuarios            Usuario[]
+  institutionProfiles InstitutionProfile[]
+  casos               Caso[]
+  botRuns             BotRun[]
+
+  @@map("regiones")
+}
+
+model Usuario {
+  id           Int          @id @default(autoincrement())
+  nombre       String
+  correo       String       @unique
+  passwordHash String       @map("password_hash")
+  rolId        Int          @map("rol_id")
+  regionId     Int?         @map("region_id")
+  firma        String? // TSI-303: data URL PNG/JPG de la firma
+  activo       Boolean      @default(true)
+  creadoEn     DateTime     @default(now()) @map("creado_en")
+  rol          Rol          @relation(fields: [rolId], references: [id])
+  region       Region?      @relation(fields: [regionId], references: [id])
+  devoluciones Devolucion[]
+  botRuns      BotRun[]
+  resoluciones Resolucion[]
+
+  @@index([regionId])
+  @@map("usuarios")
+}
+
+model InstitutionProfile {
+  id             Int               @id @default(autoincrement())
+  regionId       Int?              @map("region_id")
+  nombre         String
+  nucleoNacional Boolean           @default(false) @map("nucleo_nacional")
+  configJson     Json              @default("{}") @map("config_json")
+  creadoEn       DateTime          @default(now()) @map("creado_en")
+  region         Region?           @relation(fields: [regionId], references: [id])
+  rules          InstitutionRule[]
+
+  @@map("institution_profile")
+}
+
+model InstitutionRule {
+  id          Int                @id @default(autoincrement())
+  profileId   Int                @map("profile_id")
+  codigo      String
+  descripcion String             @default("")
+  protegida   Boolean            @default(true)
+  valorJson   Json               @default("{}") @map("valor_json")
+  profile     InstitutionProfile @relation(fields: [profileId], references: [id])
+
+  @@map("institution_rule")
+}
+
+model Semana {
+  id         Int       @id @default(autoincrement())
+  numero     Int       @unique // 1..11
+  codigo     String    @unique // "Semana 1"
+  desde      DateTime  @db.Date
+  hasta      DateTime  @db.Date
+  habilitada Boolean   @default(false)
+  cargadaEn  DateTime? @map("cargada_en")
+  casos      Caso[]
+
+  @@map("semanas")
+}
+
+model Caso {
+  id              Int             @id @default(autoincrement())
+  idTramite       String          @unique @map("id_tramite")
+  semanaId        Int             @map("semana_id")
+  regionId        Int?            @map("region_id")
+  solicitante     String          @default("")
+  estado          String          @default("DESCARGADO") // DESCARGADO | ENVIADO_BOT | INFORME_RECIBIDO
+  informeJson     Json?           @map("informe_json")
+  estadoDocumento String?         @map("estado_documento") // BORRADOR | RATIFICADO | MODIFICADO
+  estadoFlujo     String?         @map("estado_flujo") // EN_REVISION | COMPLETADO
+  creadoEn        DateTime        @default(now()) @map("creado_en")
+  semana          Semana          @relation(fields: [semanaId], references: [id])
+  region          Region?         @relation(fields: [regionId], references: [id])
+  documentos      CasoDocumento[]
+  devoluciones    Devolucion[]
+  resoluciones    Resolucion[]
+
+  @@index([semanaId])
+  @@index([estadoFlujo])
+  @@map("casos")
+}
+
+model CasoDocumento {
+  id       Int      @id @default(autoincrement())
+  casoId   Int      @map("caso_id")
+  tipo     String // CEDULA | IBF | ISRA | IVADEC
+  nombre   String   @default("")
+  url      String   @default("")
+  creadoEn DateTime @default(now()) @map("creado_en")
+  caso     Caso     @relation(fields: [casoId], references: [id], onDelete: Cascade)
+
+  @@index([casoId])
+  @@map("caso_documentos")
+}
+
+model Devolucion {
+  id         Int       @id @default(autoincrement())
+  casoId     Int       @map("caso_id")
+  motivo     String
+  creadoPor  Int?      @map("creado_por")
+  estado     String    @default("ABIERTA") // ABIERTA | RESUELTA
+  creadoEn   DateTime  @default(now()) @map("creado_en")
+  resueltaEn DateTime? @map("resuelta_en")
+  caso       Caso      @relation(fields: [casoId], references: [id], onDelete: Cascade)
+  autor      Usuario?  @relation(fields: [creadoPor], references: [id])
+
+  @@index([casoId, estado])
+  @@map("devoluciones")
+}
+
+// TSI-208 — historial de corridas del bot
+model BotRun {
+  id              Int      @id @default(autoincrement())
+  run             Int // correlativo por administrador
+  regionId        Int?     @map("region_id")
+  semanas         String   @default("") // "1,2,3"
+  encontrados     Int      @default(0)
+  descargados     Int      @default(0)
+  errores         Int      @default(0)
+  duracionSeg     Int      @default(0) @map("duracion_seg")
+  totalCasos      Int      @default(0) @map("total_casos")
+  totalDocumentos Int      @default(0) @map("total_documentos")
+  destino         String   @default("MOCK")
+  ok              Boolean  @default(true)
+  detalle         String   @default("")
+  creadoPor       Int?     @map("creado_por")
+  creadoEn        DateTime @default(now()) @map("creado_en")
+  region          Region?  @relation(fields: [regionId], references: [id])
+  autor           Usuario? @relation(fields: [creadoPor], references: [id])
+
+  @@index([creadoPor, creadoEn])
+  @@map("bot_runs")
+}
+
+// TSI-402 / flujo médico — resolución del informe + firma PNG
+model Resolucion {
+  id                Int      @id @default(autoincrement())
+  casoId            Int      @map("caso_id")
+  decision          String // RATIFICA | MODIFICA
+  calificacionFinal String?  @map("calificacion_final")
+  camposModificados Json     @default("{}") @map("campos_modificados")
+  firmaPng          String?  @map("firma_png")
+  medicoId          Int?     @map("medico_id")
+  enviadoBackend    Boolean  @default(false) @map("enviado_backend")
+  creadoEn          DateTime @default(now()) @map("creado_en")
+  caso              Caso     @relation(fields: [casoId], references: [id], onDelete: Cascade)
+  medico            Usuario? @relation(fields: [medicoId], references: [id])
+
+  @@index([casoId])
+  @@map("resoluciones")
+}
+
+// TSI-105 — estado de los procesos del bot
+model AutomationProceso {
+  proceso       String    @id // INGEST | ANALYSIS
+  estado        String    @default("DETENIDO") // DETENIDO | CORRIENDO | COMPLETADO | ERROR
+  iniciadoEn    DateTime? @map("iniciado_en")
+  detenidoEn    DateTime? @map("detenido_en")
+  encontrados   Int       @default(0)
+  procesados    Int       @default(0)
+  errores       Int       @default(0)
+  actualizadoEn DateTime? @map("actualizado_en")
+
+  @@map("automation_procesos")
+}
+
+model LoginIntento {
+  id       Int      @id @default(autoincrement())
+  correo   String
+  exito    Boolean
+  ip       String?
+  creadoEn DateTime @default(now()) @map("creado_en")
+
+  @@index([correo, creadoEn])
+  @@map("login_intentos")
+}
