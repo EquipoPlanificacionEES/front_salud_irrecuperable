@@ -10,13 +10,12 @@ import {
   type DoctorWorkload,
   type OperationalCase,
 } from "@/lib/backend";
+import { Aviso, Btn, Chip, FilaVacia, Select, Stat, Tabla, Textarea, workflowTono } from "../ui";
 
-// GET /api/v1/admin/cases?batchId=&assignment=&status=&limit=&offset=
-// GET /api/v1/admin/doctor-workload            (para el desplegable de reasignación)
-// PUT /api/v1/admin/cases/:id/assignment       {doctorProfileId}
-// POST /api/v1/admin/cases/:id/assignment/end
-
-const sel = "rounded-lg border border-[var(--atm-linea)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--atm-azul2)]";
+// GET  /api/v1/admin/cases?batchId=&assignment=&status=&limit=&offset=
+// GET  /api/v1/admin/doctor-workload            (desplegable de reasignación)
+// PUT  /api/v1/admin/cases/:id/assignment       {doctorProfileId}
+// POST /api/v1/admin/cases/:id/assignment/end   {reason}   ← el motivo es OBLIGATORIO
 
 export function Casos() {
   const [casos, setCasos] = useState<OperationalCase[]>([]);
@@ -27,6 +26,9 @@ export function Casos() {
   const [fAsig, setFAsig] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [quitando, setQuitando] = useState<string | null>(null);
+  const [motivo, setMotivo] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     api<{ batches: BatchListItem[] }>("/admin/batches?limit=200").then((d) => setSemanas(d.batches)).catch(() => {});
@@ -55,78 +57,148 @@ export function Casos() {
   async function reasignar(caseId: string, doctorProfileId: string) {
     setMsg(null);
     try {
-      if (doctorProfileId === "__end__") {
-        await api(`/admin/cases/${caseId}/assignment/end`, { method: "POST" });
-      } else {
-        await api(`/admin/cases/${caseId}/assignment`, { method: "PUT", json: { doctorProfileId } });
-      }
+      await api(`/admin/cases/${caseId}/assignment`, { method: "PUT", json: { doctorProfileId } });
+      setMsg({ ok: true, texto: "Caso reasignado." });
       await cargar();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "Error al reasignar." });
     }
   }
 
+  async function quitar(caseId: string) {
+    if (motivo.trim().length < 3) {
+      setMsg({ ok: false, texto: "Indica un motivo (mín. 3 caracteres)." });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api(`/admin/cases/${caseId}/assignment/end`, { json: { reason: motivo.trim() } });
+      setMsg({ ok: true, texto: "Asignación retirada. El caso queda sin médico responsable." });
+      setQuitando(null);
+      setMotivo("");
+      await cargar();
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo retirar la asignación." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const asignados = casos.filter((c) => c.assignment).length;
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <select className={sel} value={fBatch} onChange={(e) => setFBatch(e.target.value)}>
+    <div className="space-y-5">
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="Casos (filtro actual)" valor={total} />
+        <Stat label="Con médico" valor={asignados} tono="ok" />
+        <Stat label="Sin asignar" valor={casos.length - asignados} tono={casos.length - asignados ? "obs" : "neutral"} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--atm-linea)] bg-white p-3 text-sm shadow-sm">
+        <Select value={fBatch} onChange={(e) => setFBatch(e.target.value)}>
           <option value="">Todas las semanas</option>
-          {semanas.map(({ batch }) => <option key={batch.id} value={batch.id}>{batch.name}</option>)}
-        </select>
-        <select className={sel} value={fAsig} onChange={(e) => setFAsig(e.target.value)}>
+          {semanas.map(({ batch }) => (
+            <option key={batch.id} value={batch.id}>
+              {batch.name}
+            </option>
+          ))}
+        </Select>
+        <Select value={fAsig} onChange={(e) => setFAsig(e.target.value)}>
           <option value="">Asignadas y sin asignar</option>
           <option value="ASSIGNED">Solo asignadas</option>
           <option value="UNASSIGNED">Solo sin asignar</option>
-        </select>
-        <span className="text-zinc-400">{total} caso(s)</span>
+        </Select>
       </div>
 
-      {msg && <p className={`text-sm ${msg.ok ? "text-[var(--atm-ok)]" : "text-[var(--atm-mal)]"}`}>{msg.texto}</p>}
+      {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
 
-      <div className="overflow-x-auto rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-[var(--atm-th)] text-left text-white">
-              <th className="px-4 py-2 font-medium">Nº trámite</th>
-              <th className="px-4 py-2 font-medium">Semana</th>
-              <th className="px-4 py-2 font-medium">Estado</th>
-              <th className="px-4 py-2 font-medium">Informe</th>
-              <th className="px-4 py-2 font-medium">Orientación</th>
-              <th className="px-4 py-2 font-medium">Médico</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cargando && <tr><td colSpan={6} className="px-4 py-6 text-center text-zinc-400">Cargando…</td></tr>}
-            {!cargando && casos.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Sin casos. Llegan cuando el bot procesa una semana.</td></tr>
-            )}
-            {casos.map((c) => (
-              <tr key={c.caseId} className="border-t border-[var(--atm-linea)]">
-                <td className="px-4 py-2 font-mono text-xs">{c.externalCaseId}</td>
-                <td className="px-4 py-2 text-zinc-600">{c.batch?.name ?? "—"}</td>
-                <td className="px-4 py-2 text-zinc-600">{CASE_STATUS_LABEL[c.status] ?? c.status}</td>
-                <td className="px-4 py-2 text-zinc-600">{c.report ? WORKFLOW_LABEL[c.report.workflowStatus] : "—"}</td>
-                <td className="px-4 py-2 text-zinc-600">
-                  {c.report?.orientationAssessment ? ORIENTATION_LABEL[c.report.orientationAssessment] : "—"}
-                </td>
-                <td className="px-4 py-2">
-                  <select
-                    className={sel}
-                    value={c.assignment?.doctorProfileId ?? ""}
-                    onChange={(e) => e.target.value && reasignar(c.caseId, e.target.value)}
-                  >
-                    <option value="">— sin asignar —</option>
-                    {medicos.map((m) => (
-                      <option key={m.doctorProfileId} value={m.doctorProfileId}>{m.fullName}</option>
-                    ))}
-                    {c.assignment && <option value="__end__">Quitar asignación</option>}
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Tabla columnas={["Nº trámite", "Semana", "Estado", "Informe", "Orientación", "Médico responsable", ""]}>
+        {cargando && <FilaVacia cols={7}>Cargando…</FilaVacia>}
+        {!cargando && casos.length === 0 && (
+          <FilaVacia cols={7}>Sin casos. Llegan cuando el bot procesa una semana.</FilaVacia>
+        )}
+        {casos.map((c) => (
+          <tr key={c.caseId} className="border-t border-[var(--atm-linea)] align-top hover:bg-[var(--atm-fondo)]">
+            <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{c.batch?.name ?? "—"}</td>
+            <td className="px-4 py-2.5">
+              <Chip>{CASE_STATUS_LABEL[c.status] ?? c.status}</Chip>
+            </td>
+            <td className="px-4 py-2.5">
+              {c.report ? (
+                <Chip tono={workflowTono(c.report.workflowStatus)}>{WORKFLOW_LABEL[c.report.workflowStatus]}</Chip>
+              ) : (
+                <span className="text-xs text-zinc-400">—</span>
+              )}
+            </td>
+            <td className="px-4 py-2.5 text-zinc-600">
+              {c.report?.orientationAssessment ? ORIENTATION_LABEL[c.report.orientationAssessment] : "—"}
+            </td>
+            <td className="px-4 py-2.5">
+              <Select
+                className="w-full min-w-44"
+                value={c.assignment?.doctorProfileId ?? ""}
+                onChange={(e) => e.target.value && reasignar(c.caseId, e.target.value)}
+              >
+                <option value="">— sin asignar —</option>
+                {medicos.map((m) => (
+                  <option key={m.doctorProfileId} value={m.doctorProfileId}>
+                    {m.fullName}
+                    {!m.assignable ? " (inactivo)" : ""}
+                  </option>
+                ))}
+              </Select>
+              {quitando === c.caseId && (
+                <div className="mt-2 space-y-2">
+                  <Textarea
+                    rows={2}
+                    className="w-full text-xs"
+                    placeholder="Motivo para dejar el caso sin médico (queda en el historial)"
+                    value={motivo}
+                    onChange={(e) => setMotivo(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Btn
+                      variante="neutral"
+                      className="px-2.5 py-1 text-xs"
+                      onClick={() => {
+                        setQuitando(null);
+                        setMotivo("");
+                      }}
+                    >
+                      Cancelar
+                    </Btn>
+                    <Btn
+                      variante="danger"
+                      className="px-2.5 py-1 text-xs"
+                      disabled={busy || motivo.trim().length < 3}
+                      onClick={() => quitar(c.caseId)}
+                    >
+                      {busy ? "Retirando…" : "Confirmar"}
+                    </Btn>
+                  </div>
+                </div>
+              )}
+            </td>
+            <td className="px-4 py-2.5 text-right">
+              {c.assignment && quitando !== c.caseId && (
+                <Btn
+                  variante="danger"
+                  className="px-2.5 py-1 text-xs"
+                  onClick={() => {
+                    setQuitando(c.caseId);
+                    setMotivo("");
+                    setMsg(null);
+                  }}
+                >
+                  Quitar
+                </Btn>
+              )}
+            </td>
+          </tr>
+        ))}
+      </Tabla>
     </div>
   );
 }

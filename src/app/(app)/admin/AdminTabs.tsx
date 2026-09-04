@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/admin/semanas", etiqueta: "Semanas" },
   { href: "/admin/asignaciones", etiqueta: "Asignaciones" },
+  { href: "/admin/reasignacion", etiqueta: "Reasignar" },
   { href: "/admin/casos", etiqueta: "Casos" },
   { href: "/admin/informes", etiqueta: "Informes" },
   { href: "/admin/exportaciones", etiqueta: "Exportaciones" },
@@ -17,17 +18,15 @@ const TABS = [
 export function AdminTabs() {
   const pathname = usePathname();
   return (
-    <nav className="mb-6 flex flex-wrap gap-1 border-b border-[var(--atm-linea)]">
+    <nav className="mb-6 flex flex-wrap gap-1 rounded-xl border border-[var(--atm-linea)] bg-white p-1 shadow-sm">
       {TABS.map((t) => {
-        const activa = t.href === "/admin" ? pathname === "/admin" : pathname.startsWith(t.href);
+        const activa = pathname.startsWith(t.href);
         return (
           <Link
             key={t.href}
             href={t.href}
-            className={`rounded-t-lg px-3 py-2 text-sm font-medium ${
-              activa
-                ? "border-b-2 border-[var(--atm-azul2)] text-[var(--atm-azul)]"
-                : "text-zinc-500 hover:text-zinc-700"
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+              activa ? "bg-[var(--atm-azul)] text-white" : "text-zinc-600 hover:bg-zinc-50"
             }`}
           >
             {t.etiqueta}

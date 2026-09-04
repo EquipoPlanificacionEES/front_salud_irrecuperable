@@ -49,7 +49,7 @@ export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: 
 
     return (
       <div className="space-y-6">
-        <p className="text-sm text-zinc-500">Hola, {nombre}. Este es el estado de tus trámites.</p>
+        <p className="text-sm text-zinc-500">Hola, {nombre}. Este es el estado de tus casos.</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Kpi label="Asignados a ti" valor={asignados} />
           <Kpi label="Por revisar" valor={porRevisar} />
@@ -60,7 +60,7 @@ export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: 
           href="/mis-tramites"
           className="inline-block rounded-lg border border-[var(--atm-azul2)] px-4 py-2 text-sm font-semibold text-[var(--atm-azul)] hover:bg-blue-50"
         >
-          Ir a mis trámites
+          Ir a mis casos
         </Link>
       </div>
     );

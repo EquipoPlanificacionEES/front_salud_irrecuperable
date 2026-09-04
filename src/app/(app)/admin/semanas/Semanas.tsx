@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, ApiFallo } from "@/lib/api";
 import type { BatchListItem } from "@/lib/backend";
+import { Aviso, Btn, Chip, FilaVacia, Input, Stat, Tabla, batchTono } from "../ui";
 
 // GET/POST /api/v1/admin/batches · POST /api/v1/admin/batches/:id/close|reopen
 
@@ -50,76 +51,70 @@ export function Semanas() {
     }
   }
 
+  const abiertas = items.filter((i) => i.batch.status === "OPEN").length;
+  const sinAsignar = items.reduce((s, i) => s + i.summary.unassignedCases, 0);
+  const casos = items.reduce((s, i) => s + i.summary.totalCases, 0);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          className="rounded-lg border border-[var(--atm-linea)] px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]"
-          placeholder='Nombre de la semana (ej. "Semana 6")'
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && crear()}
-        />
-        <button onClick={crear} className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)]">
+    <div className="space-y-5">
+      {!cargando && items.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Semanas" valor={items.length} />
+          <Stat label="Abiertas" valor={abiertas} tono="ok" />
+          <Stat label="Casos totales" valor={casos} />
+          <Stat label="Casos sin asignar" valor={sinAsignar} tono={sinAsignar ? "obs" : "neutral"} />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-sm">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-zinc-600">Abrir una semana a mano</span>
+          <Input
+            className="w-64"
+            placeholder='ej. "Semana 6"'
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && crear()}
+          />
+        </label>
+        <Btn onClick={crear} disabled={!nombre.trim()}>
           Crear semana
-        </button>
+        </Btn>
       </div>
 
-      {msg && <p className={`text-sm ${msg.ok ? "text-[var(--atm-ok)]" : "text-[var(--atm-mal)]"}`}>{msg.texto}</p>}
+      {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
 
-      <div className="overflow-x-auto rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-[var(--atm-th)] text-left text-white">
-              <th className="px-4 py-2 font-medium">Semana</th>
-              <th className="px-4 py-2 font-medium">Estado</th>
-              <th className="px-4 py-2 font-medium">Casos</th>
-              <th className="px-4 py-2 font-medium">Sin asignar</th>
-              <th className="px-4 py-2 font-medium">En revisión</th>
-              <th className="px-4 py-2 font-medium">Firmados</th>
-              <th className="px-4 py-2 font-medium">Origen</th>
-              <th className="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {cargando && (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-zinc-400">Cargando…</td></tr>
-            )}
-            {!cargando && items.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-zinc-400">Sin semanas. Crea la primera.</td></tr>
-            )}
-            {items.map(({ batch, summary }) => (
-              <tr key={batch.id} className="border-t border-[var(--atm-linea)]">
-                <td className="px-4 py-2 font-medium">{batch.name}</td>
-                <td className="px-4 py-2">
-                  <span className={batch.status === "OPEN" ? "text-[var(--atm-ok)]" : "text-zinc-400"}>
-                    {batch.status === "OPEN" ? "abierta" : "cerrada"}
-                  </span>
-                </td>
-                <td className="px-4 py-2 text-zinc-600">{summary.totalCases}</td>
-                <td className="px-4 py-2 text-zinc-600">{summary.unassignedCases}</td>
-                <td className="px-4 py-2 text-zinc-600">{summary.readyForReview + summary.changesRequested}</td>
-                <td className="px-4 py-2 text-zinc-600">{summary.signed}</td>
-                <td className="px-4 py-2 text-zinc-500">{batch.source === "MANUAL" ? "manual" : "bot"}</td>
-                <td className="px-4 py-2 text-right whitespace-nowrap">
-                  <Link
-                    href={`/admin/asignaciones?semana=${batch.id}`}
-                    className="rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
-                  >
-                    Asignar
-                  </Link>
-                  <button
-                    onClick={() => alternar(batch.id, batch.status)}
-                    className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-zinc-600"
-                  >
-                    {batch.status === "OPEN" ? "Cerrar" : "Reabrir"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Tabla columnas={["Semana", "Estado", "Origen", "Casos", "Sin asignar", "En revisión", "Firmados", ""]}>
+        {cargando && <FilaVacia cols={8}>Cargando…</FilaVacia>}
+        {!cargando && items.length === 0 && <FilaVacia cols={8}>Sin semanas. Crea la primera.</FilaVacia>}
+        {items.map(({ batch, summary }) => (
+          <tr key={batch.id} className="border-t border-[var(--atm-linea)] hover:bg-[var(--atm-fondo)]">
+            <td className="px-4 py-2.5 font-medium text-zinc-800">{batch.name}</td>
+            <td className="px-4 py-2.5">
+              <Chip tono={batchTono(batch.status)}>{batch.status === "OPEN" ? "Abierta" : "Cerrada"}</Chip>
+            </td>
+            <td className="px-4 py-2.5 text-zinc-500">{batch.source === "MANUAL" ? "Manual" : "Bot"}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{summary.totalCases}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{summary.unassignedCases}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{summary.readyForReview + summary.changesRequested}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{summary.signed}</td>
+            <td className="px-4 py-2.5 text-right whitespace-nowrap">
+              <Link
+                href={`/admin/asignaciones?semana=${batch.id}`}
+                className="rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
+              >
+                Asignar
+              </Link>
+              <button
+                onClick={() => alternar(batch.id, batch.status)}
+                className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+              >
+                {batch.status === "OPEN" ? "Cerrar" : "Reabrir"}
+              </button>
+            </td>
+          </tr>
+        ))}
+      </Tabla>
     </div>
   );
 }

@@ -9,7 +9,7 @@ export default async function CasoPage({ params }: { params: Promise<{ id: strin
     <section>
       <div className="mb-5 flex items-baseline gap-3">
         <Link href="/mis-tramites" className="text-sm text-[var(--atm-azul2)]">
-          ← Mis trámites
+          ← Mis casos
         </Link>
       </div>
       <PantallaResultado caseId={id} />

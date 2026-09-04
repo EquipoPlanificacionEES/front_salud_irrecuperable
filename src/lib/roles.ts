@@ -10,7 +10,7 @@ export function esRol(v: unknown): v is Rol {
 
 /** Adónde llega cada rol después del login (sin dashboard: cada uno a su área). */
 export const HOME_POR_ROL: Record<Rol, string> = {
-  medico: "/mis-tramites",
+  medico: "/kpi",
   calidad: "/quality",
   admin: "/admin",
 };
@@ -35,9 +35,9 @@ export function puedeAcceder(rol: Rol, pathname: string): boolean {
 
 // Ítems del menú (TSI-202). `roles` controla la visibilidad.
 export const NAV: { href: string; etiqueta: string; roles: readonly Rol[] }[] = [
-  { href: "/mis-tramites", etiqueta: "Mis trámites", roles: ["medico"] }, // TSI-301: solo médico
+  { href: "/kpi", etiqueta: "KPI", roles: ["medico", "calidad", "admin"] },
+  { href: "/mis-tramites", etiqueta: "Mis casos", roles: ["medico"] },
+  { href: "/mi-firma", etiqueta: "Mi firma", roles: ["medico"] },
   { href: "/admin", etiqueta: "Administración", roles: ["admin"] },
   { href: "/quality", etiqueta: "Control de calidad", roles: ["calidad", "admin"] },
-  { href: "/kpi", etiqueta: "KPI", roles: ["medico", "calidad", "admin"] },
-  { href: "/mi-firma", etiqueta: "Mi firma", roles: ["medico"] }, // solo el médico firma
 ];

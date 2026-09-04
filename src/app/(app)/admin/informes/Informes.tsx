@@ -9,12 +9,12 @@ import {
   type ReportListItem,
   type ReportWorkflowStatus,
 } from "@/lib/backend";
+import { Aviso, Chip, FilaVacia, Select, Tabla, workflowTono } from "../ui";
 
 // GET /api/v1/reports?batchId=&workflowStatus=&limit=&offset=
 // GET /api/v1/reports/:id/download          (PRE_REPORT .docx)
 // GET /api/v1/reports/:id/signed-document   (informe final firmado .docx)
 
-const sel = "rounded-lg border border-[var(--atm-linea)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--atm-azul2)]";
 const ORDEN: ReportWorkflowStatus[] = ["READY_FOR_REVIEW", "CHANGES_REQUESTED", "APPROVED", "SIGNING", "SIGNED", "SIGNING_FAILED"];
 
 export function Informes() {
@@ -52,80 +52,79 @@ export function Informes() {
   }, [cargar]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <select className={sel} value={fBatch} onChange={(e) => setFBatch(e.target.value)}>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--atm-linea)] bg-white p-3 text-sm shadow-sm">
+        <Select value={fBatch} onChange={(e) => setFBatch(e.target.value)}>
           <option value="">Todas las semanas</option>
-          {semanas.map(({ batch }) => <option key={batch.id} value={batch.id}>{batch.name}</option>)}
-        </select>
-        <select className={sel} value={fWf} onChange={(e) => setFWf(e.target.value)}>
+          {semanas.map(({ batch }) => (
+            <option key={batch.id} value={batch.id}>
+              {batch.name}
+            </option>
+          ))}
+        </Select>
+        <Select value={fWf} onChange={(e) => setFWf(e.target.value)}>
           <option value="">Cualquier estado</option>
-          {ORDEN.map((w) => <option key={w} value={w}>{WORKFLOW_LABEL[w]}</option>)}
-        </select>
-        <span className="text-zinc-400">{total} informe(s)</span>
+          {ORDEN.map((w) => (
+            <option key={w} value={w}>
+              {WORKFLOW_LABEL[w]}
+            </option>
+          ))}
+        </Select>
+        <span className="ml-auto text-zinc-400">{total} informe(s)</span>
       </div>
 
-      <div className="flex flex-wrap gap-2 text-xs">
-        {ORDEN.filter((w) => counts[w]).map((w) => (
-          <span key={w} className="rounded-lg border border-[var(--atm-linea)] bg-white px-2.5 py-1 text-zinc-600">
-            {WORKFLOW_LABEL[w]}: {counts[w]}
-          </span>
+      {ORDEN.some((w) => counts[w]) && (
+        <div className="flex flex-wrap gap-2">
+          {ORDEN.filter((w) => counts[w]).map((w) => (
+            <Chip key={w} tono={workflowTono(w)}>
+              {WORKFLOW_LABEL[w]}: {counts[w]}
+            </Chip>
+          ))}
+        </div>
+      )}
+
+      {msg && <Aviso ok={false}>{msg}</Aviso>}
+
+      <Tabla columnas={["Nº trámite", "Semana", "Médico", "Versión", "Estado", "Orientación", ""]}>
+        {cargando && <FilaVacia cols={7}>Cargando…</FilaVacia>}
+        {!cargando && reports.length === 0 && (
+          <FilaVacia cols={7}>Sin informes. Aparecen cuando un caso se procesa.</FilaVacia>
+        )}
+        {reports.map((r) => (
+          <tr key={r.reportId} className="border-t border-[var(--atm-linea)] hover:bg-[var(--atm-fondo)]">
+            <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{r.externalCaseId}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{r.batch?.name ?? "—"}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{r.doctor?.fullName ?? "—"}</td>
+            <td className="px-4 py-2.5 text-zinc-600">v{r.version}</td>
+            <td className="px-4 py-2.5">
+              <Chip tono={workflowTono(r.workflowStatus)}>{WORKFLOW_LABEL[r.workflowStatus]}</Chip>
+            </td>
+            <td className="px-4 py-2.5 text-zinc-600">
+              {r.orientationAssessment ? ORIENTATION_LABEL[r.orientationAssessment] : "—"}
+            </td>
+            <td className="px-4 py-2.5 text-right whitespace-nowrap">
+              <a
+                href={`/api/v1/reports/${r.reportId}/download`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-[var(--atm-azul)] hover:bg-blue-50"
+              >
+                Preinforme
+              </a>
+              {r.signedAt && (
+                <a
+                  href={`/api/v1/reports/${r.reportId}/signed-document`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-[var(--atm-azul)] hover:bg-blue-50"
+                >
+                  Firmado
+                </a>
+              )}
+            </td>
+          </tr>
         ))}
-      </div>
-
-      {msg && <p className="text-sm text-[var(--atm-mal)]">{msg}</p>}
-
-      <div className="overflow-x-auto rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-[var(--atm-th)] text-left text-white">
-              <th className="px-4 py-2 font-medium">Nº trámite</th>
-              <th className="px-4 py-2 font-medium">Semana</th>
-              <th className="px-4 py-2 font-medium">Médico</th>
-              <th className="px-4 py-2 font-medium">Versión</th>
-              <th className="px-4 py-2 font-medium">Estado</th>
-              <th className="px-4 py-2 font-medium">Orientación</th>
-              <th className="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {cargando && <tr><td colSpan={7} className="px-4 py-6 text-center text-zinc-400">Cargando…</td></tr>}
-            {!cargando && reports.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin informes. Aparecen cuando un caso se procesa.</td></tr>
-            )}
-            {reports.map((r) => (
-              <tr key={r.reportId} className="border-t border-[var(--atm-linea)]">
-                <td className="px-4 py-2 font-mono text-xs">{r.externalCaseId}</td>
-                <td className="px-4 py-2 text-zinc-600">{r.batch?.name ?? "—"}</td>
-                <td className="px-4 py-2 text-zinc-600">{r.doctor?.fullName ?? "—"}</td>
-                <td className="px-4 py-2 text-zinc-600">v{r.version}</td>
-                <td className="px-4 py-2 text-zinc-600">{WORKFLOW_LABEL[r.workflowStatus]}</td>
-                <td className="px-4 py-2 text-zinc-600">{r.orientationAssessment ? ORIENTATION_LABEL[r.orientationAssessment] : "—"}</td>
-                <td className="px-4 py-2 text-right whitespace-nowrap">
-                  <a
-                    href={`/api/v1/reports/${r.reportId}/download`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-[var(--atm-azul)] hover:bg-blue-50"
-                  >
-                    Preinforme
-                  </a>
-                  {r.signedAt && (
-                    <a
-                      href={`/api/v1/reports/${r.reportId}/signed-document`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-[var(--atm-azul)] hover:bg-blue-50"
-                    >
-                      Firmado
-                    </a>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      </Tabla>
     </div>
   );
 }
