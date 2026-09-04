@@ -187,11 +187,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const cap = rep.capabilities;
   const editando = modo === "modificar";
   const estado = ESTADO[rep.workflowStatus];
-  // Señal de conformidad con la IA: si hubo una corrección del médico antes de
-  // ratificar (esta versión), la propuesta original no se sostuvo tal cual.
-  // Con esto se puede medir, caso a caso, cuándo la IA acertó y cuándo no.
-  const huboCorreccion = rep.reviews.some((r) => r.decision === "CHANGES_REQUESTED");
-  const yaRatificado = rep.reviews.some((r) => r.decision === "APPROVED");
   const propuestaActual = rep.proposal.recoverableChecked
     ? "Salud recuperable"
     : rep.proposal.irrecoverableChecked
@@ -212,14 +207,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               Versión {rep.version} · preinforme del {fecha(rep.createdAt)}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
-            {yaRatificado && (
-              <span className="text-[11px] text-zinc-400">
-                {huboCorreccion ? "Con corrección del médico" : "Conforme con la propuesta de la IA"}
-              </span>
-            )}
-          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--atm-linea)] pt-3">
           <button
