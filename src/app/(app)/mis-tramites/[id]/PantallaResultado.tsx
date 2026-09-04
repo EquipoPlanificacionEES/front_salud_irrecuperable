@@ -187,11 +187,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const cap = rep.capabilities;
   const editando = modo === "modificar";
   const estado = ESTADO[rep.workflowStatus];
-  const propuestaActual = rep.proposal.recoverableChecked
-    ? "Salud recuperable"
-    : rep.proposal.irrecoverableChecked
-      ? "Salud irrecuperable"
-      : "Sin marcar";
   const inputBase = "w-full rounded-lg border border-[var(--atm-linea)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]";
   const puedeActuar = cap.canApprove || cap.canRequestChanges;
   const desglose = desglosarLicencias(rep.licenses);
@@ -346,10 +341,23 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                     </ul>
                   )}
                   {s.id === "V" && (
-                    <p className="mt-1 text-sm">
-                      <span className="text-zinc-500">Casilla marcada: </span>
-                      <span className="font-medium text-zinc-900">{propuestaActual}</span>
-                    </p>
+                    <div className="mt-2 space-y-1.5 text-sm">
+                      {([
+                        ["Salud recuperable", rep.proposal.recoverableChecked],
+                        ["Salud irrecuperable", rep.proposal.irrecoverableChecked],
+                      ] as const).map(([texto, marcado]) => (
+                        <div key={texto} className="flex items-center gap-2">
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center border text-[11px] font-bold leading-none ${
+                              marcado ? "border-zinc-900 text-zinc-900" : "border-zinc-400 text-transparent"
+                            }`}
+                          >
+                            X
+                          </span>
+                          <span className={marcado ? "font-medium text-zinc-900" : "text-zinc-600"}>{texto.toUpperCase()}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </>
               )}
