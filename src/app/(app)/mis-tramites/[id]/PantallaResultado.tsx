@@ -230,14 +230,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       {estado.aviso && !editando && (
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO[estado.aviso.tono]}`}>{estado.aviso.texto}</p>
       )}
-      {rep.readiness.status === "NOT_READY" && (
-        <div className={`rounded-lg border px-4 py-3 text-sm ${TONO.mal}`}>
-          <p className="font-medium">Este informe no está listo para finalizar:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {rep.readiness.blockers.map((b) => <li key={b.code}>{b.statement}</li>)}
-          </ul>
-        </div>
-      )}
       {editando && (
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO.info}`}>
           Estás modificando el informe. Solo puedes cambiar la <strong>Conclusión general (IV)</strong> y la{" "}
