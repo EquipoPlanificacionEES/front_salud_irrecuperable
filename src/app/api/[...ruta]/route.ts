@@ -3,9 +3,8 @@ import { type NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Proxy único: reenvía TODO /api/* al backend real (BACKEND_URL).
-// El front no tiene datos ni lógica propia — solo consume los endpoints del backend.
-// La cookie de sesión (httpOnly) la emite y borra el backend; acá solo se reenvía.
+// /api/* → proxy al backend real (BACKEND_URL). Reenvía método, query, body y cookie;
+// propaga Set-Cookie. La cookie de sesión (httpOnly) la emite/borra el backend.
 
 const HOP_BY_HOP = new Set([
   "connection",
@@ -20,8 +19,8 @@ async function proxy(req: NextRequest): Promise<Response> {
   const base = process.env.BACKEND_URL?.trim();
   if (!base) {
     return Response.json(
-      { ok: false, error: "Backend no configurado (BACKEND_URL)." },
-      { status: 503 },
+      { ok: false, error: "BACKEND_URL no configurado." },
+      { status: 502 },
     );
   }
 
@@ -32,14 +31,8 @@ async function proxy(req: NextRequest): Promise<Response> {
     if (!HOP_BY_HOP.has(k.toLowerCase())) headers.set(k, v);
   });
 
-  const init: RequestInit = {
-    method: req.method,
-    headers,
-    redirect: "manual",
-  };
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = await req.arrayBuffer();
-  }
+  const init: RequestInit = { method: req.method, headers, redirect: "manual" };
+  if (req.method !== "GET" && req.method !== "HEAD") init.body = await req.arrayBuffer();
 
   let backendRes: Response;
   try {

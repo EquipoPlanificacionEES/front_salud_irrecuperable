@@ -28,14 +28,21 @@ model Usuario {
   correo       String       @unique
   passwordHash String       @map("password_hash")
   rolId        Int          @map("rol_id")
-  region       String? // NULL = alcance nacional (admin)
-  firma        String? // TSI-303: data URL PNG/JPG de la firma
-  activo       Boolean      @default(true)
-  creadoEn     DateTime     @default(now()) @map("creado_en")
-  rol          Rol          @relation(fields: [rolId], references: [id])
-  devoluciones Devolucion[]
-  botRuns      BotRun[]
-  resoluciones Resolucion[]
+  rut           String? // RUT del profesional
+  sis           String?        @unique // código de médico de la Superintendencia de Salud
+  region        String? // NULL = alcance nacional (admin)
+  firma         String? // TSI-303: data URL PNG/JPG de la firma
+  limiteSemanal Int            @default(10) @map("limite_semanal") // máx. casos asignables por semana
+  activo        Boolean        @default(true)
+  creadoEn      DateTime       @default(now()) @map("creado_en")
+  rol           Rol            @relation(fields: [rolId], references: [id])
+  devoluciones  Devolucion[]
+  botRuns       BotRun[]
+  resoluciones  Resolucion[]
+  casos         Caso[]         @relation("CasoMedico")
+  asignaciones  Asignacion[]
+  reasignDesde  Reasignacion[] @relation("ReasignOrigen")
+  reasignHacia  Reasignacion[] @relation("ReasignDestino")
 
   @@map("usuarios")
 }
@@ -65,50 +72,75 @@ model InstitutionRule {
 }
 
 model Semana {
-  id         Int       @id @default(autoincrement())
-  numero     Int       @unique // 1..11
-  codigo     String    @unique // "Semana 1"
-  desde      DateTime  @db.Date
-  hasta      DateTime  @db.Date
-  habilitada Boolean   @default(false)
-  cargadaEn  DateTime? @map("cargada_en")
-  casos      Caso[]
+  id                 Int       @id @default(autoincrement())
+  numero             Int       @unique // 1..11
+  codigo             String    @unique // "Semana 1"
+  desde              DateTime  @db.Date
+  hasta              DateTime  @db.Date
+  habilitada         Boolean   @default(false)
+  limiteAsignaciones Int       @default(40) @map("limite_asignaciones") // tope semanal
+  cargadaEn          DateTime? @map("cargada_en")
+  casos              Caso[]
 
   @@map("semanas")
 }
 
 model Caso {
-  id              Int             @id @default(autoincrement())
-  idTramite       String          @unique @map("id_tramite") // Nº de búsqueda del médico
-  semanaId        Int             @map("semana_id")
+  id              Int            @id @default(autoincrement())
+  idTramite       String         @unique @map("id_tramite") // Nº de búsqueda del médico
+  semanaId        Int            @map("semana_id")
   region          String?
-  solicitante     String          @default("")
-  estado          String          @default("DESCARGADO") // DESCARGADO | ENVIADO_BOT | INFORME_RECIBIDO
-  informeJson     Json?           @map("informe_json")
-  estadoDocumento String?         @map("estado_documento") // BORRADOR | RATIFICADO | MODIFICADO
-  estadoFlujo     String?         @map("estado_flujo") // EN_REVISION | COMPLETADO
-  creadoEn        DateTime        @default(now()) @map("creado_en")
-  semana          Semana          @relation(fields: [semanaId], references: [id])
-  documentos      CasoDocumento[]
+  medicoId        Int?           @map("medico_id") // médico asignado / que resolvió
+  solicitante     String         @default("")
+  anio            Int? // año del proceso
+  documentoUrl    String?        @map("documento_url") // único documento de antecedentes
+  documentoNombre String?        @map("documento_nombre")
+  estado          String         @default("DESCARGADO") // DESCARGADO | ENVIADO_BOT | INFORME_RECIBIDO
+  informeJson     Json?          @map("informe_json")
+  estadoDocumento String?        @map("estado_documento") // BORRADOR | RATIFICADO | MODIFICADO
+  estadoFlujo     String?        @map("estado_flujo") // EN_REVISION | COMPLETADO
+  creadoEn        DateTime       @default(now()) @map("creado_en")
+  semana          Semana         @relation(fields: [semanaId], references: [id])
+  medico          Usuario?       @relation("CasoMedico", fields: [medicoId], references: [id])
   devoluciones    Devolucion[]
   resoluciones    Resolucion[]
+  asignaciones    Asignacion[]
+  reasignaciones  Reasignacion[]
 
   @@index([semanaId])
   @@index([estadoFlujo])
+  @@index([medicoId])
   @@map("casos")
 }
 
-model CasoDocumento {
-  id       Int      @id @default(autoincrement())
-  casoId   Int      @map("caso_id")
-  tipo     String // CEDULA | IBF | ISRA | IVADEC
-  nombre   String   @default("")
-  url      String   @default("")
-  creadoEn DateTime @default(now()) @map("creado_en")
-  caso     Caso     @relation(fields: [casoId], references: [id], onDelete: Cascade)
+// Historial de asignaciones (primera asignación de un caso sin médico) — admin
+model Asignacion {
+  id           Int      @id @default(autoincrement())
+  casoId       Int      @map("caso_id")
+  medicoId     Int      @map("medico_id")
+  realizadaPor Int?     @map("realizada_por")
+  creadoEn     DateTime @default(now()) @map("creado_en")
+  caso         Caso     @relation(fields: [casoId], references: [id], onDelete: Cascade)
+  medico       Usuario  @relation(fields: [medicoId], references: [id])
 
   @@index([casoId])
-  @@map("caso_documentos")
+  @@map("asignaciones")
+}
+
+// Historial de reasignaciones de casos entre médicos (admin)
+model Reasignacion {
+  id            Int      @id @default(autoincrement())
+  casoId        Int      @map("caso_id")
+  medicoOrigen  Int?     @map("medico_origen")
+  medicoDestino Int      @map("medico_destino")
+  realizadaPor  Int?     @map("realizada_por")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  caso          Caso     @relation(fields: [casoId], references: [id], onDelete: Cascade)
+  origen        Usuario? @relation("ReasignOrigen", fields: [medicoOrigen], references: [id])
+  destino       Usuario  @relation("ReasignDestino", fields: [medicoDestino], references: [id])
+
+  @@index([casoId])
+  @@map("reasignaciones")
 }
 
 model Devolucion {

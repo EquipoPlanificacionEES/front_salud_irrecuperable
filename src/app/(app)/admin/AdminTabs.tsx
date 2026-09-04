@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Sub-navegación del área de administración: cada tarea del admin en su pestaña.
+// Sub-navegación del área de administración. Cada pestaña consume el backend real
+// (/api/v1/admin/*, /api/v1/reports, /api/v1/exports).
 const TABS = [
-  { href: "/admin", etiqueta: "Resumen" },
-  { href: "/admin/carga", etiqueta: "Carga y envío al bot" },
-  { href: "/admin/automation", etiqueta: "Automatización" },
-  { href: "/admin/historial-bot", etiqueta: "Historial BOT" },
-  { href: "/admin/modificados", etiqueta: "Casos modificados" },
+  { href: "/admin/semanas", etiqueta: "Semanas" },
+  { href: "/admin/asignaciones", etiqueta: "Asignaciones" },
+  { href: "/admin/casos", etiqueta: "Casos" },
+  { href: "/admin/informes", etiqueta: "Informes" },
+  { href: "/admin/exportaciones", etiqueta: "Exportaciones" },
+  { href: "/admin/usuarios", etiqueta: "Usuarios" },
 ];
 
 export function AdminTabs() {

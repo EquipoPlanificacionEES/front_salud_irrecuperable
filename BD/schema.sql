@@ -15,9 +15,12 @@ CREATE TABLE IF NOT EXISTS usuarios (
   correo        TEXT    NOT NULL UNIQUE,
   password_hash TEXT    NOT NULL,
   rol_id        INTEGER NOT NULL REFERENCES roles(id),
-  region        TEXT,                              -- NULL = alcance nacional (admin)
-  firma         TEXT,                              -- TSI-303: data URL PNG/JPG de la firma
-  activo        INTEGER NOT NULL DEFAULT 1,
+  rut            TEXT,                             -- RUT del profesional
+  sis            TEXT    UNIQUE,                   -- código de médico de la Superintendencia de Salud
+  region         TEXT,                             -- NULL = alcance nacional (admin)
+  firma          TEXT,                             -- TSI-303: data URL PNG/JPG de la firma
+  limite_semanal INTEGER NOT NULL DEFAULT 10,      -- máximo de casos que se le pueden asignar por semana
+  activo         INTEGER NOT NULL DEFAULT 1,
   creado_en     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -42,13 +45,14 @@ CREATE TABLE IF NOT EXISTS institution_rule (
 
 -- Semanas 1..11 del proceso
 CREATE TABLE IF NOT EXISTS semanas (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  numero     INTEGER NOT NULL UNIQUE,   -- 1..11
-  codigo     TEXT    NOT NULL UNIQUE,   -- "Semana 1"
-  desde      TEXT    NOT NULL,
-  hasta      TEXT    NOT NULL,
-  habilitada INTEGER NOT NULL DEFAULT 0,
-  cargada_en TEXT
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  numero              INTEGER NOT NULL UNIQUE,   -- 1..11
+  codigo              TEXT    NOT NULL UNIQUE,   -- "Semana 1"
+  desde               TEXT    NOT NULL,
+  hasta               TEXT    NOT NULL,
+  habilitada          INTEGER NOT NULL DEFAULT 0,
+  limite_asignaciones INTEGER NOT NULL DEFAULT 40, -- tope de asignaciones disponibles esa semana
+  cargada_en          TEXT
 );
 
 -- casos.estado (pipeline):   DESCARGADO -> ENVIADO_BOT -> INFORME_RECIBIDO
@@ -60,7 +64,11 @@ CREATE TABLE IF NOT EXISTS casos (
   id_tramite       TEXT    NOT NULL UNIQUE,
   semana_id        INTEGER NOT NULL REFERENCES semanas(id),
   region           TEXT,
+  medico_id        INTEGER REFERENCES usuarios(id),   -- médico asignado / que resolvió
   solicitante      TEXT    NOT NULL DEFAULT '',
+  anio             INTEGER,                           -- año del proceso (feedback: "fecha por año")
+  documento_url    TEXT,                              -- único documento de antecedentes del caso (lo trae el backend)
+  documento_nombre TEXT,
   estado           TEXT    NOT NULL DEFAULT 'DESCARGADO',
   informe_json     TEXT,
   estado_documento TEXT,
@@ -68,13 +76,25 @@ CREATE TABLE IF NOT EXISTS casos (
   creado_en        TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS caso_documentos (
-  id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  caso_id   INTEGER NOT NULL REFERENCES casos(id) ON DELETE CASCADE,
-  tipo      TEXT    NOT NULL,   -- CEDULA | IBF | ISRA | IVADEC
-  nombre    TEXT    NOT NULL DEFAULT '',
-  url       TEXT    NOT NULL DEFAULT '',
-  creado_en TEXT    NOT NULL DEFAULT (datetime('now'))
+-- casos.medico_id = NULL cuando el caso llega sin asignar; el admin lo asigna a mano.
+
+-- historial de asignaciones (primera asignación de un caso sin médico) — admin
+CREATE TABLE IF NOT EXISTS asignaciones (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  caso_id       INTEGER NOT NULL REFERENCES casos(id) ON DELETE CASCADE,
+  medico_id     INTEGER NOT NULL REFERENCES usuarios(id),
+  realizada_por INTEGER REFERENCES usuarios(id),
+  creado_en     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- historial de reasignaciones de casos entre médicos (admin)
+CREATE TABLE IF NOT EXISTS reasignaciones (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  caso_id        INTEGER NOT NULL REFERENCES casos(id) ON DELETE CASCADE,
+  medico_origen  INTEGER REFERENCES usuarios(id),
+  medico_destino INTEGER NOT NULL REFERENCES usuarios(id),
+  realizada_por  INTEGER REFERENCES usuarios(id),
+  creado_en      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 -- TSI-208: historial de corridas del bot (una fila por envío del admin)
@@ -141,8 +161,10 @@ CREATE TABLE IF NOT EXISTS login_intentos (
 
 CREATE INDEX IF NOT EXISTS idx_casos_semana ON casos (semana_id);
 CREATE INDEX IF NOT EXISTS idx_casos_flujo ON casos (estado_flujo);
-CREATE INDEX IF NOT EXISTS idx_docs_caso ON caso_documentos (caso_id);
+CREATE INDEX IF NOT EXISTS idx_casos_medico ON casos (medico_id);
 CREATE INDEX IF NOT EXISTS idx_bot_runs_admin ON bot_runs (creado_por, creado_en);
 CREATE INDEX IF NOT EXISTS idx_resoluciones_caso ON resoluciones (caso_id);
 CREATE INDEX IF NOT EXISTS idx_devoluciones_caso ON devoluciones (caso_id, estado);
+CREATE INDEX IF NOT EXISTS idx_reasignaciones_caso ON reasignaciones (caso_id);
+CREATE INDEX IF NOT EXISTS idx_asignaciones_caso ON asignaciones (caso_id);
 CREATE INDEX IF NOT EXISTS idx_login_intentos_correo ON login_intentos (correo, creado_en);

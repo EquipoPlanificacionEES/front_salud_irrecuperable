@@ -1,25 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verificarToken, COOKIE_SESION } from "@/lib/session";
+import { verificarSesion, COOKIE_SESION } from "@/lib/session";
 import { HOME_POR_ROL, puedeAcceder } from "@/lib/roles";
 
-// Guarda de rutas (Edge). Exige sesión y aplica los permisos por rol de `roles.ts`.
-// Si un rol intenta abrir una sección que no le toca -> lo devuelve a su dashboard.
-
-const PUBLICAS = ["/login", "/api/auth/login"];
+// Guarda de rutas de PÁGINA. Exige sesión (verificada contra el backend) y
+// aplica los permisos por rol de `roles.ts`. Las rutas `/api/*` no se tocan
+// aquí: el backend real ya responde 401/403 y el proxy lo reenvía.
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const sesion = await verificarToken(req.cookies.get(COOKIE_SESION)?.value);
 
-  if (PUBLICAS.includes(pathname)) {
-    if (pathname === "/login" && sesion) {
-      return NextResponse.redirect(new URL(HOME_POR_ROL[sesion.rol], req.url));
-    }
+  // El proxy y el backend se encargan de /api/*.
+  if (pathname.startsWith("/api/")) return NextResponse.next();
+
+  const sesion = await verificarSesion(req.cookies.get(COOKIE_SESION)?.value);
+
+  if (pathname === "/login") {
+    if (sesion) return NextResponse.redirect(new URL(HOME_POR_ROL[sesion.rol], req.url));
     return NextResponse.next();
-  }
-
-  if (pathname.startsWith("/api/")) {
-    return sesion ? NextResponse.next() : NextResponse.json({ ok: false }, { status: 401 });
   }
 
   if (!sesion) {
@@ -40,5 +37,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Todo menos assets de Next y archivos estáticos del /public.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpe?g|svg|gif|webp|ico|css|js|woff2?)).*)"],
 };

@@ -1,272 +1,242 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { FichaCaso } from "./FichaCaso";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiFallo } from "@/lib/api";
+import { WORKFLOW_LABEL, es, type ReportWorkflowStatus } from "@/lib/backend";
 
-// TSI-402 / TSI-302 / TSI-303 — Pantalla resultado (solo médico):
-// ficha del caso + Ver PDF / Descargar DOCX + resolución (ratificar/modificar) con firma.
+// GET  /api/v1/cases/:caseId/report      → preinforme (secciones I–V + anexo + capacidades)
+// POST /api/v1/reports/:reportId/approve  {comments?}  → RATIFICAR (firma la que tiene cargada el médico)
+// POST /api/v1/reports/:reportId/reviews  {comments}   → MODIFICAR: el médico manda la nueva redacción de IV y V
+//
+// NOTA: el backend todavía no deja reescribir el informe en sitio (ReportSnapshot
+// es inmutable). "Modificar" envía la nueva conclusión (IV) y propuesta (V) como
+// una solicitud de corrección — el informe queda "Cambios pedidos".
 
-interface Detalle {
-  id: number;
-  id_tramite: string;
-  solicitante: string;
-  estado: string;
-  estado_documento: string | null;
-  estado_flujo: string | null;
-  devolucion_motivo: string | null;
-  informe: Record<string, unknown> | null;
-  documentos: { tipo: string; nombre: string }[];
-  resolucion: {
-    decision: string;
-    calificacion_final: string | null;
-    campos_modificados: Record<string, unknown>;
-    tiene_firma: boolean;
-    creado_en: string;
-  } | null;
+interface Field { label: string; value: string }
+interface Section { id: string; title: string; narrative: string; fields: Field[]; items: string[] }
+interface Report {
+  id: string;
+  caseReference: string;
+  version: number;
+  workflowStatus: ReportWorkflowStatus;
+  sections: Section[];
+  proposal: { recoverableChecked: boolean; irrecoverableChecked: boolean; unresolvedNote: string | null };
+  readiness: { status: "READY" | "NOT_READY"; blockers: { code: string; statement: string }[] };
+  draftArtifact: { downloadUrl: string } | null;
+  finalArtifact: { downloadUrl: string } | null;
+  capabilities: { canRequestChanges: boolean; canApprove: boolean; hasActiveSignature: boolean };
 }
 
-const CAMPOS_EDITABLES = [
-  { key: "diagnostico_principal", label: "Diagnóstico principal" },
-  { key: "porcentaje_sugerido", label: "Porcentaje" },
-  { key: "grado", label: "Grado" },
-  { key: "origen", label: "Origen" },
-];
+type Evaluacion = "RECOVERABLE" | "IRRECOVERABLE";
 
-export function PantallaResultado({ id }: { id: number }) {
-  const router = useRouter();
-  const [d, setD] = useState<Detalle | null>(null);
-  const [decision, setDecision] = useState<"RATIFICA" | "MODIFICA">("RATIFICA");
-  const [campos, setCampos] = useState<Record<string, string>>({});
-  const [calif, setCalif] = useState("");
-  const [firmaGuardada, setFirmaGuardada] = useState<string | null>(null);
-  const [usarGuardada, setUsarGuardada] = useState(true);
-  const [firmaNueva, setFirmaNueva] = useState<string | null>(null);
-  const [enviando, setEnviando] = useState(false);
+export function PantallaResultado({ caseId }: { caseId: string }) {
+  const [rep, setRep] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [modo, setModo] = useState<"ver" | "modificar">("ver");
+  const [conclusion, setConclusion] = useState("");
+  const [evaluacion, setEvaluacion] = useState<Evaluacion>("IRRECOVERABLE");
+  const [nota, setNota] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  async function cargar() {
-    const r = await fetch(`/api/casos/${id}`);
-    const j = await r.json();
-    if (j.ok) {
-      setD(j.caso);
-      const p = (j.caso.informe?.propuesta ?? {}) as Record<string, unknown>;
-      const init: Record<string, string> = {};
-      for (const c of CAMPOS_EDITABLES) init[c.key] = p[c.key] == null ? "" : String(p[c.key]);
-      setCampos(init);
-      setCalif(p.porcentaje_sugerido != null ? `${p.porcentaje_sugerido}%` : "");
-    }
-  }
-  useEffect(() => {
-    cargar();
-    fetch("/api/mi-firma")
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.ok && j.firma) setFirmaGuardada(j.firma);
-        else setUsarGuardada(false);
-      });
-  }, [id]);
-
-  function onFirma(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.type !== "image/png" && f.type !== "image/jpeg") {
-      setError("La firma debe ser PNG o JPG.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFirmaNueva(reader.result as string);
-      setError(null);
-    };
-    reader.readAsDataURL(f);
-  }
-
-  async function enviar() {
-    setEnviando(true);
+  const cargar = useCallback(async () => {
     setError(null);
-    const p = (d?.informe?.propuesta ?? {}) as Record<string, unknown>;
-    const diff: Record<string, unknown> = {};
-    if (decision === "MODIFICA") {
-      for (const c of CAMPOS_EDITABLES) {
-        if (String(p[c.key] ?? "") !== campos[c.key]) diff[c.key] = campos[c.key];
-      }
-    }
-    const firmaPng = usarGuardada ? null : firmaNueva; // null => backend usa la firma guardada
     try {
-      const r = await fetch(`/api/casos/${id}/resolver`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          decision,
-          calificacionFinal:
-            decision === "MODIFICA"
-              ? calif
-              : p.porcentaje_sugerido != null
-                ? `${p.porcentaje_sugerido}%`
-                : null,
-          campos: diff,
-          firmaPng,
-        }),
-      });
-      const j = await r.json();
-      if (!j.ok) {
-        setError(j.error ?? "No se pudo enviar.");
-        return;
-      }
+      setRep(await api<Report>(`/cases/${caseId}/report`));
+    } catch (e) {
+      setError(
+        e instanceof ApiFallo
+          ? e.status === 404
+            ? "Este caso todavía no tiene preinforme (no se ha procesado)."
+            : e.status === 403
+              ? "Este caso no está asignado a ti."
+              : e.message
+          : "No se pudo cargar el caso.",
+      );
+    }
+  }, [caseId]);
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  function abrirModificar() {
+    if (!rep) return;
+    setConclusion(rep.sections.find((s) => s.id === "IV")?.narrative ?? "");
+    setEvaluacion(rep.proposal.recoverableChecked ? "RECOVERABLE" : "IRRECOVERABLE");
+    setNota(rep.proposal.unresolvedNote ?? "");
+    setMsg(null);
+    setModo("modificar");
+  }
+
+  async function enviarModificacion() {
+    if (!rep || conclusion.trim().length < 1) return;
+    setBusy(true);
+    setMsg(null);
+    const comments = [
+      "MODIFICACIÓN DEL MÉDICO",
+      "",
+      "IV. CONCLUSIÓN GENERAL:",
+      conclusion.trim(),
+      "",
+      "V. PROPUESTA DE EVALUACIÓN:",
+      evaluacion === "RECOVERABLE" ? "Salud recuperable" : "Salud irrecuperable",
+      ...(nota.trim() ? ["", `Nota: ${nota.trim()}`] : []),
+    ].join("\n");
+    try {
+      await api(`/reports/${rep.id}/reviews`, { json: { comments } });
+      setMsg({ ok: true, texto: "Modificación enviada. El informe queda para corrección." });
+      setModo("ver");
       await cargar();
-      router.refresh();
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "Error al enviar." });
     } finally {
-      setEnviando(false);
+      setBusy(false);
     }
   }
 
-  if (!d) return <p className="text-sm text-zinc-400">Cargando…</p>;
+  async function ratificar() {
+    if (!rep) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api(`/reports/${rep.id}/approve`, { json: {} });
+      setMsg({ ok: true, texto: "Informe ratificado y enviado a firma." });
+      await cargar();
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "Error al ratificar." });
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  const enRevision = d.estado_flujo === "EN_REVISION";
-  const firmaLista = usarGuardada ? !!firmaGuardada : !!firmaNueva;
+  if (error) return <p className="rounded-xl border border-[var(--atm-linea)] bg-white p-5 text-sm text-zinc-500">{error}</p>;
+  if (!rep) return <p className="text-sm text-zinc-400">Cargando…</p>;
+
+  const cap = rep.capabilities;
+  const editando = modo === "modificar";
+  const inputBase = "w-full rounded-lg border border-[var(--atm-linea)] px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]";
 
   return (
-    <div className="space-y-6">
-      {d.devolucion_motivo && (
-        <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-[var(--atm-obs)]">
-          Devuelto por Control de calidad: {d.devolucion_motivo}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-baseline gap-3">
+        <h3 className="text-base font-semibold text-zinc-900">Nº {rep.caseReference}</h3>
+        <span className="rounded-full border border-[var(--atm-linea)] bg-white px-2 py-0.5 text-xs text-zinc-500">
+          {WORKFLOW_LABEL[rep.workflowStatus]} · v{rep.version}
+        </span>
+        {rep.draftArtifact && (
+          <a href={`/api/v1${rep.draftArtifact.downloadUrl.replace(/^\/api\/v1/, "")}`} target="_blank" rel="noreferrer" className="text-sm text-[var(--atm-azul2)]">
+            Descargar preinforme (.docx)
+          </a>
+        )}
+        {rep.finalArtifact && (
+          <a href={`/api/v1${rep.finalArtifact.downloadUrl.replace(/^\/api\/v1/, "")}`} target="_blank" rel="noreferrer" className="text-sm text-[var(--atm-azul2)]">
+            Descargar informe firmado (.docx)
+          </a>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
+        {rep.sections.map((s) => {
+          const editable = editando && (s.id === "IV" || s.id === "V");
+          return (
+            <section key={s.id} className={`border-t border-[var(--atm-linea)] px-5 py-4 first:border-t-0 ${editable ? "bg-blue-50/40" : ""}`}>
+              <h4 className="mb-2 text-sm font-semibold text-zinc-800">{s.title}</h4>
+
+              {editando && s.id === "IV" ? (
+                <textarea
+                  className={`${inputBase} min-h-[120px]`}
+                  value={conclusion}
+                  onChange={(e) => setConclusion(e.target.value)}
+                  placeholder="Conclusión general"
+                />
+              ) : editando && s.id === "V" ? (
+                <div className="space-y-2">
+                  <div className="flex gap-4 text-sm">
+                    {(["RECOVERABLE", "IRRECOVERABLE"] as const).map((v) => (
+                      <label key={v} className="flex items-center gap-1.5">
+                        <input type="radio" name="evaluacion" checked={evaluacion === v} onChange={() => setEvaluacion(v)} />
+                        {v === "RECOVERABLE" ? "Salud recuperable" : "Salud irrecuperable"}
+                      </label>
+                    ))}
+                  </div>
+                  <textarea
+                    className={inputBase}
+                    rows={2}
+                    value={nota}
+                    onChange={(e) => setNota(e.target.value)}
+                    placeholder="Nota (opcional)"
+                  />
+                </div>
+              ) : (
+                <>
+                  {s.narrative && <p className="whitespace-pre-wrap text-sm text-zinc-700">{s.narrative}</p>}
+                  {s.fields.length > 0 && (
+                    <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                      {s.fields.map((f, i) => (
+                        <div key={i} className="text-sm">
+                          <dt className="inline text-zinc-500">{f.label}: </dt>
+                          <dd className="inline text-zinc-800">{es(f.value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {s.items.length > 0 && (
+                    <ul className="mt-2 list-disc pl-5 text-sm text-zinc-700">
+                      {s.items.map((it, i) => <li key={i}>{es(it)}</li>)}
+                    </ul>
+                  )}
+                </>
+              )}
+            </section>
+          );
+        })}
+      </div>
+
+      {!editando && (
+        <div className="rounded-xl border border-[var(--atm-linea)] bg-white p-4 text-sm shadow-sm">
+          <p className="text-zinc-600">
+            Propuesta marcada:{" "}
+            <span className="font-medium">
+              {rep.proposal.recoverableChecked ? "Recuperable" : rep.proposal.irrecoverableChecked ? "No recuperable" : "sin marcar"}
+            </span>
+          </p>
+          {rep.readiness.status === "NOT_READY" && (
+            <ul className="mt-2 list-disc pl-5 text-[var(--atm-mal)]">
+              {rep.readiness.blockers.map((b) => <li key={b.code}>{b.statement}</li>)}
+            </ul>
+          )}
         </div>
       )}
 
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-zinc-900">
-            Informe generado
-            <span className="ml-2 font-mono text-xs font-normal text-zinc-500">
-              Nº caso {d.id} · Nº búsqueda {d.id_tramite}
-            </span>
-          </h3>
-          <div className="flex gap-2">
-            <a
-              href={`/api/casos/${id}/informe?formato=pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm font-medium text-[var(--atm-azul)] hover:bg-blue-50"
-            >
-              Ver PDF
-            </a>
-            <a
-              href={`/api/casos/${id}/informe?formato=docx`}
-              className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm font-medium text-[var(--atm-azul)] hover:bg-blue-50"
-            >
-              Descargar DOCX
-            </a>
-          </div>
-        </div>
-        <FichaCaso informe={d.informe} />
-      </div>
+      {msg && <p className={`text-sm ${msg.ok ? "text-[var(--atm-ok)]" : "text-[var(--atm-mal)]"}`}>{msg.texto}</p>}
 
-      {enRevision ? (
-        <div className="rounded-xl border border-[var(--atm-linea)] bg-white p-5 shadow-sm">
-          <h3 className="mb-3 font-semibold text-zinc-900">Resolución del médico</h3>
-
-          <div className="mb-4 flex gap-4 text-sm">
-            {(["RATIFICA", "MODIFICA"] as const).map((op) => (
-              <label key={op} className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="decision"
-                  checked={decision === op}
-                  onChange={() => setDecision(op)}
-                />
-                {op === "RATIFICA" ? "Ratificar propuesta" : "Modificar propuesta"}
-              </label>
-            ))}
-          </div>
-
-          {decision === "MODIFICA" && (
-            <div className="mb-4 space-y-3">
-              {CAMPOS_EDITABLES.map((c) => (
-                <div key={c.key} className="flex flex-col gap-1">
-                  <label className="text-xs text-zinc-500">{c.label}</label>
-                  <input
-                    value={campos[c.key] ?? ""}
-                    onChange={(e) => setCampos((p) => ({ ...p, [c.key]: e.target.value }))}
-                    className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm outline-none focus:border-[var(--atm-azul2)]"
-                  />
-                </div>
-              ))}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-zinc-500">Calificación final</label>
-                <input
-                  value={calif}
-                  onChange={(e) => setCalif(e.target.value)}
-                  className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm outline-none focus:border-[var(--atm-azul2)]"
-                />
-              </div>
+      {(cap.canApprove || cap.canRequestChanges) && (
+        <div className="rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-sm">
+          {editando ? (
+            <div className="flex gap-2">
+              <button onClick={() => setModo("ver")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm text-zinc-600">
+                Cancelar
+              </button>
+              <button onClick={enviarModificacion} disabled={busy || !conclusion.trim()} className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                Enviar modificación
+              </button>
             </div>
-          )}
-
-          {/* TSI-303 — firma */}
-          <div className="mb-4 space-y-2">
-            <p className="text-xs text-zinc-500">Firma (PNG o JPG)</p>
-            {firmaGuardada && (
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={usarGuardada}
-                  onChange={(e) => setUsarGuardada(e.target.checked)}
-                />
-                Usar mi firma guardada
-                <img src={firmaGuardada} alt="firma" className="h-8 border border-[var(--atm-linea)] bg-white" />
-              </label>
-            )}
-            {!usarGuardada && (
-              <div>
-                <input type="file" accept="image/png,image/jpeg" onChange={onFirma} className="text-sm" />
-                {firmaNueva && (
-                  <img
-                    src={firmaNueva}
-                    alt="firma nueva"
-                    className="mt-1 h-10 border border-[var(--atm-linea)] bg-white"
-                  />
-                )}
-              </div>
-            )}
-          </div>
-
-          {error && <p className="mb-3 text-sm text-[var(--atm-mal)]">{error}</p>}
-
-          <button
-            onClick={enviar}
-            disabled={enviando || !firmaLista}
-            className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40"
-          >
-            {enviando
-              ? "Enviando…"
-              : decision === "RATIFICA"
-                ? "Ratificar y enviar al backend"
-                : "Modificar y enviar al backend"}
-          </button>
-          <p className="mt-2 text-xs text-zinc-400">
-            Se envían al backend la decisión + la firma. El backend fusiona la firma al archivo y deja
-            el caso como <strong>ratificado/completado</strong>.
-          </p>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-sm">
-          <p className="font-semibold text-[var(--atm-ok)]">
-            {d.estado_documento} · {d.estado_flujo}
-          </p>
-          {d.resolucion && (
-            <ul className="mt-2 space-y-1 text-zinc-700">
-              <li>Decisión: {d.resolucion.decision}</li>
-              <li>Calificación final: {d.resolucion.calificacion_final ?? "—"}</li>
-              <li>Firma: {d.resolucion.tiene_firma ? "adjunta ✓" : "—"}</li>
-              {Object.keys(d.resolucion.campos_modificados ?? {}).length > 0 && (
-                <li>
-                  Campos modificados:{" "}
-                  <code className="text-xs">{JSON.stringify(d.resolucion.campos_modificados)}</code>
-                </li>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              {cap.canRequestChanges && (
+                <button onClick={abrirModificar} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-700">
+                  Modificar
+                </button>
               )}
-              <li className="text-xs text-zinc-500">{d.resolucion.creado_en}</li>
-            </ul>
+              {cap.canApprove && (
+                <button onClick={ratificar} disabled={busy || !cap.hasActiveSignature} className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                  Ratificar
+                </button>
+              )}
+              {!cap.hasActiveSignature && (
+                <span className="text-xs text-[var(--atm-obs)]">Sube tu firma en «Mi firma» para poder ratificar.</span>
+              )}
+            </div>
           )}
         </div>
       )}

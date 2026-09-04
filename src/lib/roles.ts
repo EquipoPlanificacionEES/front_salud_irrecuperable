@@ -8,11 +8,11 @@ export function esRol(v: unknown): v is Rol {
   return typeof v === "string" && (ROLES as readonly string[]).includes(v);
 }
 
-/** Adónde llega cada rol después del login. */
+/** Adónde llega cada rol después del login (sin dashboard: cada uno a su área). */
 export const HOME_POR_ROL: Record<Rol, string> = {
-  medico: "/dashboard",
-  calidad: "/dashboard",
-  admin: "/dashboard",
+  medico: "/mis-tramites",
+  calidad: "/quality",
+  admin: "/admin",
 };
 
 // Secciones protegidas: prefijo de ruta -> roles permitidos.
@@ -23,7 +23,6 @@ export const PERMISOS: { prefijo: string; roles: readonly Rol[] }[] = [
   { prefijo: "/mis-tramites", roles: ["medico"] }, // TSI-301: bandeja solo para el rol médico
   { prefijo: "/kpi", roles: ["medico", "calidad", "admin"] },
   { prefijo: "/mi-firma", roles: ["medico"] }, // solo el médico firma
-  { prefijo: "/dashboard", roles: ["medico", "calidad", "admin"] },
 ];
 
 /** ¿El rol puede entrar a esta ruta? (rutas no listadas: libres para logueados) */

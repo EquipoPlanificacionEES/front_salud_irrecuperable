@@ -3,8 +3,8 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-// TSI-203 — Login UI. Sin lógica local: solo email + password contra POST /api/auth/login.
-// La validación y la emisión del token ocurren en el servidor; la cookie queda httpOnly.
+// TSI-203 — Login UI. email + password contra POST /api/v1/auth/login del backend.
+// El backend valida y setea las cookies `sir_session` (HttpOnly) + `sir_csrf`.
 export default function LoginForm({ next }: { next?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -17,17 +17,19 @@ export default function LoginForm({ next }: { next?: string }) {
     setError(null);
     setCargando(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ correo: email, password, next }),
+        body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? "No se pudo iniciar sesión.");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error?.message ?? "No se pudo iniciar sesión.");
         return;
       }
-      router.replace(data.home);
+      // A "/" y el layout raíz manda a cada rol a su área (HOME_POR_ROL).
+      const destino = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+      router.replace(destino);
       router.refresh();
     } catch {
       setError("Error de red. Intenta de nuevo.");

@@ -6,19 +6,17 @@ Frontend (Next.js 16 + Tailwind v4) de la plataforma de calificación de salud i
 ## Arquitectura
 
 ```
-navegador ──► Next.js (este repo) ──► proxy /api/[...ruta] ──► BACKEND_URL/api/*
+navegador ─► Next.js ─► /api/[...ruta] ──► proxy al backend real (BACKEND_URL)
 ```
 
-- Todas las llamadas del front van a `/api/*` y las reenvía [`src/app/api/[...ruta]/route.ts`](src/app/api/[...ruta]/route.ts) al backend (`BACKEND_URL`).
-- La **sesión** (cookie httpOnly, JWT HS256) la emite y borra el **backend**. El front solo la verifica
-  (`src/middleware.ts` + `src/lib/session.ts`) con `AUTH_SECRET` (compartido) para proteger rutas por rol.
-- Sin `BACKEND_URL` configurado, las llamadas responden `503`.
+- La sesión (cookie httpOnly, JWT HS256) la emite el backend; el front la verifica
+  (`src/middleware.ts` + `src/lib/session.ts`) con `AUTH_SECRET` para proteger rutas por rol.
 
 ## Puesta en marcha
 
 ```bash
 npm install
-cp .env.example .env.local   # completar AUTH_SECRET y BACKEND_URL
+cp .env.example .env.local   # AUTH_SECRET + BACKEND_URL
 npm run dev                   # http://localhost:3010
 ```
 
@@ -37,7 +35,7 @@ npm run dev                   # http://localhost:3010
 | `/mis-tramites` · `/mis-tramites/[id]` | **medico** | TSI-301 / 302 / 402 |
 | `/mi-firma` | **medico** | TSI-303 |
 | `/quality` | calidad · admin | — (calidad en pausa) |
-| `/admin` · `/admin/carga` · `/admin/automation` · `/admin/historial-bot` · `/admin/modificados` | **admin** | TSI-206 / 207 / 208 / 105 |
+| `/admin` · `/admin/asignaciones` · `/admin/reasignacion` · `/admin/usuarios` · `/admin/carga` · `/admin/automation` · `/admin/historial-bot` · `/admin/modificados` | **admin** | TSI-206 / 207 / 208 / 105 |
 
 Región: atributo único (viene en el JWT). Cada caso: `id` (Nº de caso) e `id_tramite` (Nº de búsqueda).
 
@@ -47,9 +45,8 @@ Ver [`src/app/api/README.md`](src/app/api/README.md).
 
 ## Contrato de datos para el backend
 
-[`BD/`](BD/README.md) — `schema.sql` (DDL), `seed.mjs` (usuarios base) y
-[`prisma/schema.prisma`](prisma/schema.prisma). El front no usa esta BD; es la referencia
-de tablas/usuarios para integrar. `npm run db:init` genera `BD/app.db` de referencia.
+[`BD/`](BD/README.md) — `schema.sql` (DDL) + firmas reales de médicos, y
+[`prisma/schema.prisma`](prisma/schema.prisma). El front no usa esta BD; es la referencia de tablas.
 
 ## Estructura
 
@@ -63,8 +60,8 @@ src/
     (app)/                  secciones protegidas (AppShell + verificación de sesión)
       dashboard/ kpi/ quality/
       mis-tramites/  mis-tramites/[id]/  mi-firma/
-      admin/  admin/{carga,automation,historial-bot,modificados}/
+      admin/  admin/{asignaciones,reasignacion,usuarios,carga,automation,historial-bot,modificados}/
     api/[...ruta]/          proxy único al backend
-BD/                       contrato de datos (schema.sql + seed.mjs) — el front NO lo usa
+BD/                       contrato de datos (schema.sql + firmas) — el front NO lo usa
 prisma/schema.prisma      modelos Prisma (PostgreSQL) para el backend
 ```

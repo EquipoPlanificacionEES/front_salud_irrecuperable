@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <h1 className="text-base font-semibold text-zinc-900">Plataforma de Calificación</h1>
           <p className="text-sm text-zinc-500">
             {sesion.nombre} · <span className="capitalize">{sesion.rol}</span>
-            {sesion.region ? ` · ${sesion.region}` : " · Nacional"}
+            {sesion.contrato ? ` · ${sesion.contrato}` : ""}
           </p>
         </div>
         <button

@@ -8,7 +8,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const sesion = await requerirSesion();
   return (
     <SesionProvider
-      sesion={{ uid: sesion.uid, rol: sesion.rol, nombre: sesion.nombre, region: sesion.region }}
+      sesion={{
+        uid: sesion.uid,
+        rol: sesion.rol,
+        roles: sesion.roles,
+        nombre: sesion.nombre,
+        correo: sesion.correo,
+        contrato: sesion.contrato,
+        contratoId: sesion.contratoId,
+        doctorProfileId: sesion.doctorProfileId,
+      }}
     >
       <AppShell>{children}</AppShell>
     </SesionProvider>

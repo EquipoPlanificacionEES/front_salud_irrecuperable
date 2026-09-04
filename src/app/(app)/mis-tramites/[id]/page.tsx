@@ -11,11 +11,8 @@ export default async function CasoPage({ params }: { params: Promise<{ id: strin
         <Link href="/mis-tramites" className="text-sm text-[var(--atm-azul2)]">
           ← Mis trámites
         </Link>
-        <span className="rounded-full border border-[var(--atm-linea)] bg-white px-2 py-0.5 font-mono text-xs text-zinc-500">
-          TSI-402
-        </span>
       </div>
-      <PantallaResultado id={Number(id)} />
+      <PantallaResultado caseId={id} />
     </section>
   );
 }

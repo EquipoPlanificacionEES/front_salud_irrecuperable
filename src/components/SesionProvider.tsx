@@ -3,15 +3,21 @@
 import { createContext, useContext, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { Rol } from "@/lib/roles";
+import { api } from "@/lib/api";
 
-// "session" (TSI-203): expone el usuario actual al árbol de la app y el cierre de sesión.
-// El estado viene del servidor (cookie httpOnly); aquí no se guarda ninguna credencial.
+// Expone el usuario actual al árbol de la app y el cierre de sesión.
+// El estado viene del servidor (cookie `sir_session` verificada contra el backend);
+// aquí no se guarda ninguna credencial.
 
 export interface SesionCliente {
   uid: string;
   rol: Rol;
+  roles: Rol[];
   nombre: string;
-  region: string | null;
+  correo: string;
+  contrato: string;
+  contratoId: string;
+  doctorProfileId: string | null;
 }
 
 interface Ctx {
@@ -31,7 +37,11 @@ export function SesionProvider({
   const router = useRouter();
 
   const cerrarSesion = useCallback(async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await api("/auth/logout", { method: "POST" });
+    } catch {
+      /* la cookie puede haber expirado; igual mandamos al login */
+    }
     router.replace("/login");
     router.refresh();
   }, [router]);

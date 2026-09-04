@@ -1,129 +1,112 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { api, ApiFallo } from "@/lib/api";
+import { WORKFLOW_LABEL, type OperationalCase } from "@/lib/backend";
 
-// TSI-301 — Bandeja "Mis trámites" (solo médico): Pendientes / Histórico / Devueltos.
-// Cada caso: Nº de caso (id interno) + Nº de búsqueda (id_tramite, el que usan los doctores).
+// GET /api/v1/inbox → los casos con asignación ACTIVA al médico que llama.
+// El médico entra a cada caso por /mis-tramites/<caseId> (GET /cases/:id/report).
 
-type Pestaña = "pendientes" | "historico" | "devueltos";
+type Pestaña = "pendientes" | "historico";
 
-interface Caso {
-  id: number;
-  id_tramite: string;
-  solicitante: string;
-  estado: string;
-  estado_documento: string | null;
-  devolucion_motivo: string | null;
-  calificacion_final: string | null;
-}
-
-const QUERY: Record<Pestaña, string> = {
-  pendientes: "flujo=EN_REVISION",
-  historico: "flujo=COMPLETADO",
-  devueltos: "estado=DEVUELTO_MEDICO",
-};
+const PENDIENTE = new Set(["READY_FOR_REVIEW", "CHANGES_REQUESTED"]);
 
 export function Bandeja() {
+  const [casos, setCasos] = useState<OperationalCase[]>([]);
   const [tab, setTab] = useState<Pestaña>("pendientes");
-  const [casos, setCasos] = useState<Caso[]>([]);
-  const [cargando, setCargando] = useState(false);
   const [buscar, setBuscar] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
-    setCargando(true);
-    fetch(`/api/casos?${QUERY[tab]}`)
-      .then((r) => r.json())
-      .then((d) => setCasos(d.ok ? d.casos : []))
+    api<{ cases: OperationalCase[] }>("/inbox")
+      .then((d) => setCasos(d.cases))
+      .catch((e) => setError(e instanceof ApiFallo ? e.message : "No se pudo cargar la bandeja."))
       .finally(() => setCargando(false));
-  }, [tab]);
+  }, []);
 
   const filtrados = useMemo(() => {
     const q = buscar.trim().toLowerCase();
-    if (!q) return casos;
-    return casos.filter(
-      (c) =>
-        c.id_tramite.toLowerCase().includes(q) ||
-        String(c.id).includes(q) ||
-        c.solicitante.toLowerCase().includes(q),
-    );
-  }, [casos, buscar]);
+    return casos
+      .filter((c) => {
+        const wf = c.report?.workflowStatus;
+        const esPendiente = !wf || PENDIENTE.has(wf);
+        return tab === "pendientes" ? esPendiente : !esPendiente;
+      })
+      .filter((c) => !q || c.externalCaseId.toLowerCase().includes(q));
+  }, [casos, tab, buscar]);
+
+  const nPend = casos.filter((c) => !c.report || PENDIENTE.has(c.report.workflowStatus)).length;
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(["pendientes", "historico", "devueltos"] as const).map((p) => (
+        {(["pendientes", "historico"] as const).map((p) => (
           <button
             key={p}
             onClick={() => setTab(p)}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize ${
-              tab === p
-                ? "bg-[var(--atm-azul)] text-white"
-                : "border border-[var(--atm-linea)] bg-white text-zinc-600 hover:bg-zinc-50"
+              tab === p ? "bg-[var(--atm-azul)] text-white" : "border border-[var(--atm-linea)] bg-white text-zinc-600 hover:bg-zinc-50"
             }`}
           >
-            {p}
+            {p === "pendientes" ? `Pendientes (${nPend})` : "Histórico"}
           </button>
         ))}
         <input
           value={buscar}
           onChange={(e) => setBuscar(e.target.value)}
-          placeholder="Buscar por Nº de búsqueda o solicitante"
+          placeholder="Buscar por Nº de caso"
           className="ml-auto w-64 rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm outline-none focus:border-[var(--atm-azul2)]"
         />
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
+      {error && <p className="mb-3 text-sm text-[var(--atm-mal)]">{error}</p>}
+
+      <div className="overflow-x-auto rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-[var(--atm-th)] text-left text-white">
               <th className="px-4 py-2 font-medium">Nº de caso</th>
-              <th className="px-4 py-2 font-medium">Nº de búsqueda</th>
-              <th className="px-4 py-2 font-medium">Solicitante</th>
-              <th className="px-4 py-2 font-medium">
-                {tab === "devueltos" ? "Motivo" : tab === "historico" ? "Resultado" : "Estado"}
-              </th>
-              <th className="px-4 py-2 font-medium"></th>
+              <th className="px-4 py-2 font-medium">Estado</th>
+              <th className="px-4 py-2 font-medium">Orientación</th>
+              <th className="px-4 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {!cargando &&
-              filtrados.map((c) => (
-                <tr key={c.id} className="border-t border-[var(--atm-linea)] align-top">
-                  <td className="px-4 py-2 font-mono text-zinc-500">{c.id}</td>
-                  <td className="px-4 py-2 font-mono">{c.id_tramite}</td>
-                  <td className="px-4 py-2">{c.solicitante}</td>
-                  <td className="px-4 py-2 text-zinc-600">
-                    {tab === "devueltos"
-                      ? c.devolucion_motivo
-                      : tab === "historico"
-                        ? `${c.estado_documento ?? "—"}${c.calificacion_final ? ` · ${c.calificacion_final}` : ""}`
-                        : "En revisión"}
-                  </td>
-                  <td className="px-4 py-2 text-right">
+            {cargando && <tr><td colSpan={4} className="px-4 py-10 text-center text-zinc-400">Cargando…</td></tr>}
+            {!cargando && filtrados.length === 0 && (
+              <tr><td colSpan={4} className="px-4 py-10 text-center text-zinc-400">Sin trámites {tab}.</td></tr>
+            )}
+            {filtrados.map((c) => (
+              <tr key={c.caseId} className="border-t border-[var(--atm-linea)]">
+                <td className="px-4 py-2 font-mono text-xs">{c.externalCaseId}</td>
+                <td className="px-4 py-2 text-zinc-600">
+                  {c.report ? WORKFLOW_LABEL[c.report.workflowStatus] : "Sin preinforme"}
+                </td>
+                <td className="px-4 py-2 text-zinc-600">
+                  {c.report?.orientationAssessment
+                    ? c.report.orientationAssessment === "RECOVERABLE"
+                      ? "Recuperable"
+                      : c.report.orientationAssessment === "IRRECOVERABLE"
+                        ? "No recuperable"
+                        : "Indeterminada"
+                    : "—"}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {c.report ? (
                     <Link
-                      href={`/mis-tramites/${c.id}`}
+                      href={`/mis-tramites/${c.caseId}`}
                       className="rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
                     >
                       {tab === "pendientes" ? "Revisar" : "Ver"}
                     </Link>
-                  </td>
-                </tr>
-              ))}
-            {!cargando && filtrados.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-zinc-400">
-                  Sin trámites {tab}.
+                  ) : (
+                    <span className="text-xs text-zinc-400">en proceso</span>
+                  )}
                 </td>
               </tr>
-            )}
-            {cargando && (
-              <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-zinc-400">
-                  Cargando…
-                </td>
-              </tr>
-            )}
+            ))}
           </tbody>
         </table>
       </div>

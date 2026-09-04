@@ -1,27 +1,32 @@
-# src/app/api — proxy al backend
+# src/app/api — proxy al backend real
 
-El front **no tiene datos ni lógica propia**. Todo `/api/*` se reenvía al backend real
-(`BACKEND_URL`) mediante un único proxy: [`[...ruta]/route.ts`](./[...ruta]/route.ts).
+`/api/*` pasa por [`[...ruta]/route.ts`](./[...ruta]/route.ts): reenvía método, query,
+body, cookie y `x-csrf-token` a `${BACKEND_URL}` **verbatim** (sin reescribir el path).
+El front llama directamente a las rutas reales `/api/v1/...`. Propaga `Set-Cookie`.
+Sin `BACKEND_URL` responde `502`.
 
-- Reenvía método, query, body y headers (incluida la cookie de sesión).
-- Devuelve el status y el body del backend, y propaga `Set-Cookie` (login/logout).
-- Sin `BACKEND_URL` → responde `503` (aún no integrado).
+## Sesión (backend, ADR-0023)
 
-La cookie de sesión (httpOnly, JWT HS256) la emite y borra **el backend**. El front solo la
-verifica en `src/middleware.ts` / `src/lib/session.ts` con `AUTH_SECRET` (compartido con el backend)
-para proteger rutas por rol.
+- `POST /api/v1/auth/login` con `{ email, password }` → setea `sir_session` (HttpOnly) + `sir_csrf`.
+- El front NO verifica token: `src/lib/session.ts` llama a `GET /api/v1/auth/me` con la cookie.
+- Mutaciones (POST/PUT/PATCH/DELETE): header `x-csrf-token` = valor de la cookie `sir_csrf`
+  (lo hace `src/lib/api.ts`).
+- Roles backend `ADMIN/DOCTOR/QUALITY` → front `admin/medico/calidad` (mapeo en `session.ts`).
 
-## Endpoints que consume el front (los expone el backend)
+## Estado de integración (todo contra el backend real)
 
-| Ruta | Uso en el front |
-|------|-----------------|
-| `POST /api/auth/login` · `POST /api/auth/logout` | login / logout |
-| `GET /api/casos?flujo=&estado=&decision=` | bandejas médico / calidad / admin |
-| `GET /api/casos/{id}` | ficha del caso |
-| `POST /api/casos/{id}/resolver` | ratificar / modificar + firma |
-| `GET /api/casos/{id}/informe?formato=pdf\|docx` | Ver PDF / Descargar DOCX |
-| `GET /api/mi-firma` · `POST /api/mi-firma` | firma del médico |
-| `GET /api/semanas` · `POST /api/carga` | carga de expedientes por semana (admin) |
-| `GET /api/bot/semanas` · `POST /api/bot/enviar` · `GET /api/bot/historial` | envío al bot / historial (admin) |
-| `GET/POST /api/automation/{ingest\|analysis}/{start\|stop\|status}` | procesos del bot (admin) |
-| `POST /api/quality/devolver` | devolución calidad → médico |
+| Pantalla | Endpoint(s) | Estado |
+|---|---|---|
+| Login / logout / guardas por rol | `/auth/login` `/auth/me` `/auth/logout` | ✅ |
+| Admin · Resumen | `/admin/batches` `/admin/doctor-workload` | ✅ |
+| Admin · Semanas | `/admin/batches` (GET/POST) `/close` `/reopen` | ✅ crear / cerrar / reabrir |
+| Admin · Asignaciones | `/admin/batches/:id/assignment-context` `/assignments/preview` `/assignments` | ✅ (falta data de casos para el reparto real) |
+| Admin · Casos | `/admin/cases` · `PUT /admin/cases/:id/assignment` · `/assignment/end` | ✅ listar + reasignar |
+| Admin · Informes | `/reports` · `/reports/:id/download` · `/signed-document` | ✅ listar + descargar |
+| Admin · Exportaciones | `/exports` (GET/POST) · `/exports/:id/download` | ✅ generar ZIP + descargar |
+| Admin · Usuarios | `/admin/users` + `/admin/doctors` (GET/POST/PATCH, deactivate/reactivate, credential-setup) | ✅ |
+| Médico · Mi firma | `GET/PUT /doctors/me/signature` | ✅ |
+| Médico · Ficha del caso | `GET /cases/:id/report` · `POST /reports/:id/reviews` · `/approve` | ✅ (se entra por Nº de caso: no hay bandeja del médico en el backend aún) |
+| Control de calidad | `GET /reports` (solo lectura) | ⏳ el circuito de calidad (cola/claim/review) no está en el backend |
+
+Rutas reales: `http://localhost:3000/openapi.json` (40 rutas). **Swagger manda.**

@@ -1,34 +1,45 @@
 # BD — contrato de datos para el backend
 
-El frontend **no usa esta BD** (consume el backend vía proxy). Esta carpeta es la
-**referencia de esquema + usuarios** para el equipo de backend.
+El frontend **no usa ninguna BD** (consume el backend vía proxy). Esta carpeta es la
+**referencia de esquema** para el equipo de backend.
 
 | Archivo | Qué es |
 |---------|--------|
-| `schema.sql` | DDL de todas las tablas (SQLite, pero directo a PostgreSQL). Estados, índices y relaciones. |
-| `seed.mjs` | Crea `BD/app.db` desde `schema.sql` y siembra los 3 usuarios base + roles + semanas 1..11. |
-| `../prisma/schema.prisma` | Los mismos modelos en Prisma (provider `postgresql`). |
+| `schema.sql` | DDL de todas las tablas (SQLite, traducible a PostgreSQL). Estados, índices y relaciones. |
+| `../prisma/schema.prisma` | Los mismos modelos en Prisma (`provider = postgresql`). |
+| `firmas_de_medicos/` | Firmas (PNG) de los 6 médicos reales, para cargarlas en `usuarios.firma`. |
 
-## Generar la BD de referencia
+> El front no genera ni siembra datos: consume el backend vía proxy.
 
-```bash
-npm install          # incluye bcryptjs (devDependency, solo para el seed)
-npm run db:init       # -> BD/app.db
-```
+## Roles
 
-## Usuarios sembrados (solo demo — cambiar en el backend real)
+`medico`, `calidad`, `admin`. `usuarios.region` es un atributo TEXT (una sola región).
+`usuarios.sis` = código del profesional en la Superintendencia de Salud. `usuarios.rut` = RUT del profesional.
 
-| Rol | Correo | Contraseña | Región |
-|-----|--------|------------|--------|
-| medico | medico@salud.local | `Medico2026#` | RM |
-| calidad | calidad@salud.local | `Calidad2026#` | RM |
-| admin | admin@salud.local | `Admin2026#` | — (nacional) |
+## Médicos (con firma en `firmas_de_medicos/`)
 
-`password_hash` = bcrypt (coste 12). `region` es un atributo TEXT (una sola región en el MVP).
-Cada caso tiene `id` (Nº de caso) e `id_tramite` (Nº de búsqueda de 8 dígitos que usan los médicos).
+| Nombre | SIS |
+|--------|-----|
+| Gabriela Saavedra | 637921 |
+| Gabriel Jiménez | 306124 |
+| Catalina Hormazábal | 920811 |
+| Alicia Noboa | 920172 |
+| Matías Olivares | 701168 |
+| Luis Diaz | 913179 |
 
 ## Estados por caso
 
 - `estado`: `DESCARGADO` → `ENVIADO_BOT` → `INFORME_RECIBIDO`
 - `estado_documento`: `BORRADOR` → `RATIFICADO` | `MODIFICADO`
 - `estado_flujo`: `EN_REVISION` → `COMPLETADO`  (los dos últimos coexisten)
+
+Cada caso tiene `id` (Nº de caso) e `id_tramite` (Nº de búsqueda de 8 dígitos que usan los médicos).
+`casos.medico_id` = médico asignado (**NULL cuando llega sin asignar** → el admin lo asigna a mano).
+`casos.informe_json` = "PROPUESTA DE EVALUACIÓN TSI" (secciones I–V, sin anexo). `casos.documento_url` = único
+documento de antecedentes. `casos.anio` = año del proceso.
+
+## Asignaciones (admin)
+
+- `usuarios.limite_semanal` = máximo de casos asignables a ese médico por semana.
+- `semanas.limite_asignaciones` = tope total de asignaciones disponibles esa semana.
+- Tablas `asignaciones` (primera asignación) y `reasignaciones` (movimiento entre médicos).
