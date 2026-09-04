@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
 import { es, type ReportWorkflowStatus } from "@/lib/backend";
-import { descargarInformePdf } from "@/lib/informe-pdf";
+import { descargarInformePdf, type DocumentoInforme } from "@/lib/informe-pdf";
 import { desglosarLicencias, fraseAnio, descDx, type LicenciaBackend } from "@/lib/licencias";
 
 // GET  /api/v1/cases/:caseId/report      → preinforme (secciones I–V + capacidades). El ANEXO no se muestra.
@@ -27,7 +27,12 @@ interface Report {
   version: number;
   createdAt: string;
   workflowStatus: ReportWorkflowStatus;
+  // Volcado interno del snapshot: es lo que se muestra EN PANTALLA al médico,
+  // con sus indicadores y sus advertencias. No se imprime.
   sections: Section[];
+  // El documento entregable, ya compuesto por el backend. Es lo ÚNICO que se
+  // imprime o descarga. Ver src/lib/informe-pdf.ts.
+  document: DocumentoInforme;
   proposal: { recoverableChecked: boolean; irrecoverableChecked: boolean; unresolvedNote: string | null };
   readiness: { status: "READY" | "NOT_READY"; blockers: { code: string; statement: string }[] };
   reviews: Review[];
@@ -198,6 +203,19 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       ? "Salud irrecuperable"
       : "Sin marcar";
   const inputBase = "w-full rounded-lg border border-[var(--atm-linea)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]";
+  /**
+   * RECTIFICAR Y RATIFICAR SON INDEPENDIENTES.
+   *
+   * Cada botón se muestra por SU capacidad y por ninguna otra. En particular
+   * `canRequestChanges` no mira `canApprove`, ni `readiness`, ni los
+   * bloqueadores clínicos, ni la orientación: rectificar existe precisamente
+   * para los informes que el médico no puede o no quiere aprobar tal como
+   * están, y condicionarlo a que el informe esté conforme deja al profesional
+   * mirando una propuesta que no puede corregir.
+   *
+   * La autoridad es la capacidad calculada por el backend. Aquí no se vuelve a
+   * decidir nada.
+   */
   const puedeActuar = cap.canApprove || cap.canRequestChanges;
   const desglose = desglosarLicencias(rep.licenses);
 
@@ -394,9 +412,18 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${msg.ok ? TONO.ok : TONO.mal}`}>{msg.texto}</p>
       )}
 
-      {/* Acciones */}
+      {/* Acciones.
+
+          FIJA AL VIEWPORT, no `sticky`. Era `sticky bottom-4` sobre el último
+          hijo del contenedor: el bloque pegajoso sólo se sostiene mientras su
+          contenedor está a la vista, y siendo el último elemento de una página
+          que mide varias pantallas, no aparecía hasta haber bajado el informe
+          entero. Con `canRequestChanges: true` el botón estaba renderizado y no
+          se veía, que para quien tiene que rectificar es lo mismo que no
+          estar. */}
       {puedeActuar && (
-        <div className="sticky bottom-4 rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-md">
+        <div className="fixed inset-x-0 bottom-4 z-20 mx-auto w-full max-w-5xl px-6">
+        <div className="rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-lg">
           {editando ? (
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setModo("ver")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
@@ -428,7 +455,11 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
             </div>
           )}
         </div>
+        </div>
       )}
+
+      {/* Hueco para que la barra fija no tape el final del informe. */}
+      {puedeActuar && <div aria-hidden className="h-24" />}
     </div>
   );
 }
