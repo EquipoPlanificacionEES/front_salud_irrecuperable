@@ -1,0 +1,333 @@
+==============================================================================
+ EVALUACIÓN DE SALUD IRRECUPERABLE — MANUAL DEL FRONTEND
+ (para el desarrollador del backend / compañero de equipo)
+==============================================================================
+
+Repositorio del front: front_salud_irrecuperable
+Stack: Next.js 16 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4
+Puerto local: 3001
+Repositorio del backend (referencia): backend-plataforma-salud-irrecuperable
+Puerto local del backend: 3000
+
+Este documento tiene dos partes:
+  PARTE 1 — cómo está armado el frontend (arquitectura, para que puedas
+            moverte por el código sin perderte).
+  PARTE 2 — qué endpoint del backend usa CADA pantalla, verificado línea por
+            línea contra el código real del backend (no contra el Swagger de
+            memoria). Si el backend cambia una ruta o un campo, esta es la
+            lista de qué se rompe en el front.
+
+Verificado el 2026-09-04. Todo lo que dice "OK" fue confirmado leyendo el
+router.ts y schema.ts real de cada módulo del backend, no supuesto.
+
+==============================================================================
+ PARTE 1 — ARQUITECTURA DEL FRONTEND
+==============================================================================
+
+1. SESIÓN Y AUTENTICACIÓN
+--------------------------
+El backend NO usa JWT. Usa cookies de sesión opacas:
+
+  - sir_session  (HttpOnly, el navegador la maneja solo, el JS no la toca)
+  - sir_csrf     (legible por JS, se reenvía como header en cada mutación)
+
+El front NO valida ni decodifica ningún token. En cada carga de página
+protegida llama a GET /api/v1/auth/me con la cookie de sesión y confía en la
+respuesta del backend. Ver: src/lib/session.ts (función obtenerSesion /
+verificarSesion).
+
+Mapeo de roles backend -> front (src/lib/session.ts):
+  ADMIN   -> "admin"
+  DOCTOR  -> "medico"
+  QUALITY -> "calidad"
+
+Login:      src/app/login/LoginForm.tsx        -> POST /api/v1/auth/login
+Logout:     src/components/SesionProvider.tsx  -> POST /api/v1/auth/logout
+Sesión:     src/lib/session.ts                 -> GET  /api/v1/auth/me
+Guardia:    src/lib/guard.ts + src/lib/roles.ts (protección de rutas por rol,
+            en el servidor, además del middleware)
+
+2. EL PROXY (cómo viaja cada request)
+--------------------------------------
+El front nunca llama al backend directo desde el navegador. Todo pasa por:
+
+  src/app/api/[...ruta]/route.ts
+
+Es un passthrough literal: reenvía /api/v1/* hacia ${BACKEND_URL} (variable de
+entorno), reenviando cookies y el header x-csrf-token, y devolviendo tal cual
+lo que responda el backend (incluido el Set-Cookie). No transforma nada.
+
+Cliente HTTP usado por todas las pantallas: src/lib/api.ts
+  - función api<T>(ruta, opciones)
+  - antepone "/api/v1" a la ruta
+  - agrega el header x-csrf-token (tomado de la cookie sir_csrf) en toda
+    mutación (POST/PUT/PATCH/DELETE)
+  - lanza ApiFallo(status, {code, message}) si la respuesta no es 2xx
+
+3. TIPOS Y TRADUCCIONES
+-------------------------
+src/lib/backend.ts — espejo TypeScript de los esquemas Zod del backend
+(Batch, BatchSummary, DoctorWorkload, OperationalCase, ReportListItem,
+ExportJob, etc.) + diccionarios de traducción:
+  WORKFLOW_LABEL, ORIENTATION_LABEL, CASE_STATUS_LABEL, y la función es()
+  que traduce cualquier token en MAYÚSCULAS que el backend devuelva suelto.
+
+src/lib/licencias.ts — agrupa las licencias médicas (AnalysisLicense[]) por
+año y CIE-10 para la Sección II del informe ("Durante 2024: 5 licencia(s)
+autorizada(s)...").
+
+src/lib/informe-pdf.ts — genera el PDF del informe EN EL NAVEGADOR (librería
+jspdf), con el mismo contenido y diseño que el .docx que genera el backend.
+No pide nada al backend salvo los datos del informe que ya se cargaron.
+
+4. ROLES Y NAVEGACIÓN
+-----------------------
+src/lib/roles.ts define:
+  - a qué pantalla entra cada rol al loguearse (HOME_POR_ROL)
+  - qué prefijo de ruta puede ver cada rol (PERMISOS)
+  - los ítems del menú superior (NAV)
+
+  medico  -> entra a /kpi ; ve KPI, Mis casos, Mi firma
+  calidad -> entra a /quality ; ve KPI, Control de calidad
+  admin   -> entra a /admin ; ve KPI, Administración, Control de calidad
+
+5. ESTRUCTURA DE CARPETAS (src/app)
+--------------------------------------
+  (app)/kpi/                    KPI — resumen según el rol
+  (app)/mis-tramites/           Bandeja del médico ("Mis casos")
+  (app)/mis-tramites/[id]/      Pantalla de un caso: ver/modificar/ratificar
+  (app)/mi-firma/               Subida y gestión de la firma del médico
+  (app)/quality/                Control de calidad (admin y calidad)
+  (app)/admin/                  Todo el panel de administración (7 pestañas)
+    ├── semanas/                Lotes (semanas)
+    ├── asignaciones/           Reparto masivo por semana
+    ├── reasignacion/           Mover/soltar casos ya asignados (operación)
+    ├── casos/                  Listado y reasignación individual
+    ├── informes/                Listado de informes + descargas
+    ├── exportaciones/           Armar y descargar ZIP de informes firmados
+    └── usuarios/                Alta/edición de cuentas (médicos, admin, calidad)
+
+==============================================================================
+ PARTE 2 — QUÉ ENDPOINT USA CADA PANTALLA (verificado contra el backend real)
+==============================================================================
+
+Notación: [OK] = confirmado campo a campo contra router.ts/schema.ts del
+backend en esta fecha. No hay ningún endpoint inventado en todo el front.
+
+------------------------------------------------------------------------------
+ LADO MÉDICO (rol "medico" / DOCTOR)
+------------------------------------------------------------------------------
+
+KPI (src/app/(app)/kpi/KpiPanel.tsx) — rama médico
+  GET /api/v1/inbox
+    -> cuenta "Asignados a ti / Por revisar / En proceso / Ratificados"
+       a partir de report.workflowStatus de cada caso.                  [OK]
+
+Mis casos — Bandeja (src/app/(app)/mis-tramites/Bandeja.tsx)
+  GET /api/v1/inbox
+    -> lista los casos con asignación ACTIVA al médico logueado.
+       (Este endpoint NO existía en el backend original; se agregó
+       específicamente para esto — ver "ENDPOINTS AGREGADOS" al final.) [OK]
+
+Pantalla de un caso (src/app/(app)/mis-tramites/[id]/PantallaResultado.tsx)
+  GET  /api/v1/cases/:caseId/report
+    -> trae el preinforme completo: secciones I-V, licencias (AnalysisLicense[]),
+       reviews, draftArtifact/finalArtifact, capabilities.
+       La sección "ANEXO" se descarta en el front (nunca se muestra ni se
+       exporta, por pedido explícito del cliente).                      [OK]
+  POST /api/v1/reports/:reportId/approve   {comments?}
+    -> botón "Ratificar". Dispara la firma del documento final en el
+       backend (worker asíncrono). El front hace polling sobre el mismo
+       GET .../report cada 1.5s (hasta 15 veces) esperando a que aparezca
+       finalArtifact o que workflowStatus pase a SIGNING_FAILED.        [OK]
+  POST /api/v1/reports/:reportId/reviews   {comments}
+    -> botón "Modificar". El médico solo puede reescribir la Sección IV
+       (Conclusión) y la V (Propuesta); el resto del documento queda de
+       solo lectura. El texto se arma en el front y se manda como
+       "comments" porque el ReportSnapshot es inmutable en el backend:
+       esto abre una versión nueva del informe (v2, v3...).             [OK]
+  Descarga de documentos: <a href> directo (no pasa por src/lib/api.ts)
+    /api/v1{draftArtifact.downloadUrl}   preinforme .docx
+    /api/v1{finalArtifact.downloadUrl}   informe firmado .docx
+  PDF: generado 100% en el navegador (src/lib/informe-pdf.ts), no llama
+    al backend.
+
+Mi firma (src/app/(app)/mi-firma/MiFirma.tsx)
+  GET /api/v1/doctors/me/signature
+    -> estado: si tiene firma activa, versión, ancho/alto, peso, fecha.  [OK]
+  PUT /api/v1/doctors/me/signature   (cuerpo BINARIO: el PNG/JPG crudo,
+       Content-Type: image/png o image/jpeg — NO es multipart/form-data)
+    -> sube o reemplaza la firma. El backend NUNCA devuelve los bytes de
+       la firma vigente (por diseño), así que el front guarda una copia
+       de la última imagen subida en localStorage de ESE navegador solo
+       para poder previsualizarla; si el médico entra desde otro equipo,
+       no ve la imagen (sí ve los metadatos: versión, tamaño, fecha).   [OK]
+
+------------------------------------------------------------------------------
+ CONTROL DE CALIDAD (rol "calidad", y también accesible por "admin")
+------------------------------------------------------------------------------
+
+src/app/(app)/quality/RevisionCalidad.tsx
+  GET  /api/v1/reports?limit=200
+    -> lista todos los informes del contrato, con pestañas Ratificados /
+       En el médico / Todos.                                            [OK]
+  POST /api/v1/reports/:reportId/return-to-doctor   {reason (mín. 10 car.)}
+    -> botón "Devolver al médico". Solo aparece sobre informes ya
+       ratificados/firmados. Crea una versión nueva del informe en
+       READY_FOR_REVIEW para que el médico la corrija. (Endpoint
+       AGREGADO al backend — ver abajo.)                                [OK]
+
+------------------------------------------------------------------------------
+ ADMINISTRACIÓN (rol "admin")
+------------------------------------------------------------------------------
+
+KPI (src/app/(app)/kpi/KpiPanel.tsx) — rama admin/calidad
+  GET /api/v1/admin/batches?limit=200
+  GET /api/v1/admin/doctor-workload?includeInactive=true
+    -> tarjetas totales + tabla de semanas + tabla de carga por médico.  [OK]
+
+Semanas (src/app/(app)/admin/semanas/Semanas.tsx)
+  GET  /api/v1/admin/batches?limit=200
+  POST /api/v1/admin/batches                 {name, sourceFolderId?}
+    -> crea una semana a mano (idempotente por nombre normalizado).     [OK]
+  POST /api/v1/admin/batches/:id/close       {reason?}
+  POST /api/v1/admin/batches/:id/reopen      {reason?}
+    -> abrir/cerrar una semana para reparto.                            [OK]
+
+Asignaciones (src/app/(app)/admin/asignaciones/Asignaciones.tsx)
+  GET  /api/v1/admin/batches?status=OPEN&limit=200
+  GET  /api/v1/admin/batches/:id/assignment-context
+    -> trae doctors[] con su carga y cuántos casos elegibles hay.       [OK]
+  POST /api/v1/admin/batches/:id/assignments/preview
+       {allocations:[{doctorProfileId, quantity}]}
+    -> previsualiza el reparto (no escribe nada todavía).               [OK]
+  POST /api/v1/admin/batches/:id/assignments
+       {allocations, eligibilityFingerprint}
+    -> confirma el reparto de forma ATÓMICA (una sola transacción).
+       El front ahora CLAMPEA en vivo la cantidad que se puede pedir por
+       médico para que la suma nunca supere ctx.eligibleCases — ya no se
+       puede pedir más casos de los que existen.                        [OK]
+
+Reasignar (src/app/(app)/admin/reasignacion/Reasignar.tsx)   -- PANTALLA NUEVA
+  GET  /api/v1/admin/doctor-workload?includeInactive=true
+  GET  /api/v1/admin/cases?doctorProfileId=X&assignment=ASSIGNED&limit=200
+    -> casos ya asignados de un médico puntual, para operación en curso.
+  PUT  /api/v1/admin/cases/:caseId/assignment   {doctorProfileId, reason?}
+    -> mueve un caso (o varios, uno por uno) a otro médico.
+  POST /api/v1/admin/cases/:caseId/assignment/end   {reason}
+    -> suelta un caso (queda sin médico responsable).
+  IMPORTANTE: el backend NO tiene un endpoint de traspaso masivo/atómico
+  entre médicos. El "mover en bloque" de esta pantalla es un LOOP en el
+  front que llama PUT una vez por caso; si el backend algún día expone un
+  endpoint de traspaso real, esta pantalla es la que hay que simplificar. [OK]
+
+Casos (src/app/(app)/admin/casos/Casos.tsx)
+  GET  /api/v1/admin/cases?batchId=&assignment=&limit=100
+  GET  /api/v1/admin/batches?limit=200            (para el filtro de semana)
+  GET  /api/v1/admin/doctor-workload?includeInactive=true (para reasignar)
+  PUT  /api/v1/admin/cases/:caseId/assignment      {doctorProfileId}
+  POST /api/v1/admin/cases/:caseId/assignment/end  {reason}  <- OBLIGATORIO,
+       mín. 1 carácter. El front pide el motivo con un textarea antes de
+       dejar "Quitar" habilitado.                                       [OK]
+
+Informes (src/app/(app)/admin/informes/Informes.tsx)
+  GET /api/v1/reports?batchId=&workflowStatus=&limit=100
+  GET /api/v1/admin/batches?limit=200             (para el filtro de semana)
+  Descargas por <a href>:
+    /api/v1/reports/:id/download           preinforme .docx
+    /api/v1/reports/:id/signed-document    informe firmado .docx (solo si
+                                            r.signedAt no es null)       [OK]
+
+Exportaciones (src/app/(app)/admin/exportaciones/Exportaciones.tsx)
+  GET  /api/v1/admin/batches?limit=200
+    -> arma la grilla de tarjetas "Semana 1 ... Semana N", cada una con
+       total de casos y cuántos están firmados (summary.signed = lo
+       exportable).
+  GET  /api/v1/admin/doctor-workload?includeInactive=true (filtro médico)
+  POST /api/v1/exports  {type:"SIGNED_REPORTS_ZIP",
+                          filters:{batchId?, doctorProfileId?, orientation?}}
+    -> encola la exportación. La selección se CONGELA en ese instante: un
+       informe firmado DESPUÉS de este clic no entra al ZIP aunque
+       cumpla los mismos filtros.
+  GET  /api/v1/exports?limit=50           (polling cada 3s)
+  GET  /api/v1/exports/:id/download       (solo cuando status = READY)
+  NOTA: no existe un paso "guardar" aparte. En cuanto el job pasa a
+  READY, el archivo YA quedó guardado en el storage del backend; el
+  link de descarga solo lo sirve.                                       [OK]
+
+Usuarios (src/app/(app)/admin/usuarios/Usuarios.tsx)
+  GET   /api/v1/admin/users?limit=200
+  GET   /api/v1/admin/doctors?limit=200
+  POST  /api/v1/admin/users
+        {email, displayName, roles, doctorProfile?, password?}
+    -> crear cuenta. Dos modos (elegidos en el front con un radio button):
+       a) SIN password: la cuenta nace PENDING_SETUP y el backend
+          devuelve un token de instalación de un solo uso; la persona lo
+          canjea en POST /auth/setup-password para fijar su propia clave.
+       b) CON password (campo agregado al backend a pedido del cliente,
+          ver "ENDPOINTS AGREGADOS"): la cuenta nace ACTIVE de inmediato
+          con esa contraseña ya hasheada (Argon2id) por el backend; NO se
+          emite token.                                                  [OK]
+  PATCH /api/v1/admin/users/:id             {displayName?, roles?}
+  PATCH /api/v1/admin/doctors/:id           {fullName?, profession?,
+                                              professionalCode?, nationalId?}
+  POST  /api/v1/admin/users/:id/deactivate
+  POST  /api/v1/admin/users/:id/reactivate
+  POST  /api/v1/admin/users/:id/credential-setup
+    -> reemitir el token de instalación (solo para cuentas PENDING_SETUP). [OK]
+
+==============================================================================
+ ENDPOINTS AGREGADOS AL BACKEND DESDE EL FRONT (no estaban en la versión
+ original que me pasaste — quedaron documentados en el Swagger igual)
+==============================================================================
+
+1) GET /api/v1/inbox   (roles: DOCTOR)
+   No existía forma de que un médico listara SUS PROPIOS casos asignados.
+   Se agregó en apps/api/src/modules/operations/{router,schema}.ts y
+   listing-service.ts, reutilizando ListingService.listCases forzado al
+   doctorProfileId del que llama (nunca acepta uno del body/query).
+
+2) POST /api/v1/reports/:reportId/return-to-doctor   {reason}   (roles: ADMIN, QUALITY)
+   No existía forma de que calidad/admin devolviera un informe ya
+   ratificado/firmado al médico para corregirlo. Se agregó en
+   apps/api/src/modules/reports/{router,schema,review-service}.ts.
+   Supersede la versión actual del ReportSnapshot (y sus artefactos) y
+   crea una versión nueva en READY_FOR_REVIEW. No toca reglas de dominio
+   ni el esquema de datos, solo agrega la operación.
+
+3) licenses[] en GET /reports/:reportId y GET /cases/:caseId/report
+   Se agregó el arreglo crudo de AnalysisLicense (folio, cie10, fechas,
+   días autorizados, estado) a la respuesta del informe, para que el
+   front pueda agrupar la Sección II por año. Antes esos datos existían
+   en la base pero no salían en la respuesta HTTP.
+
+4) password? opcional en POST /api/v1/admin/users   (roles: ADMIN)
+   Por defecto el backend NUNCA deja que el admin fije la contraseña de
+   otra persona (era una regla de diseño explícita, documentada como
+   ADR-0023 §8: "el admin no debe conocer la credencial de otra
+   persona"). A pedido explícito del cliente de la plataforma se agregó
+   un campo opcional `password` (12-128 caracteres): si viene, el admin
+   la fija ahí mismo, el backend la hashea con Argon2id y la cuenta nace
+   ACTIVE sin token. Si no viene, el comportamiento de siempre no cambia.
+
+Todos estos cambios están en el backend LOCAL de pruebas. No se hizo commit
+ni push de ninguno — quedan para que el dueño del backend decida si los
+integra, los revisa o los rehace a su manera.
+
+==============================================================================
+ QUÉ NO EXISTE (y por qué algunas pantallas están limitadas)
+==============================================================================
+
+- No hay traspaso masivo/atómico de casos entre médicos: "Reasignar" hace
+  un PUT por caso, uno por uno, sin transacción conjunta.
+- No hay "recuperar contraseña" para un usuario ACTIVE: solo existe el
+  flujo de token para cuentas nuevas o reemitido manualmente por el admin.
+- El backend no devuelve los bytes de la firma vigente por GET: por eso
+  "Mi firma" depende de localStorage del navegador para la previsualización.
+- La Sección II del .docx (Word) todavía NO tiene el desglose por año que
+  sí tienen la plataforma y el PDF — el backend arma esa sección con
+  narrative:"" fijo en presentReportSnapshot. Pendiente para el backend.
+
+==============================================================================
+FIN DEL DOCUMENTO
+==============================================================================

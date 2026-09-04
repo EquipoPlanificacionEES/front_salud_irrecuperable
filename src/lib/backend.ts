@@ -154,13 +154,18 @@ export interface ExportJob {
   error: { code: string; message: string } | null;
 }
 
+// Simplificado a 3 grupos visuales (por revisar / ratificado / devuelto):
+// SIGNING y SIGNED son "ya ratificado, documento en curso o listo"; SIGNING_FAILED
+// se agrupa con "devuelto" porque, igual que un CHANGES_REQUESTED, requiere una
+// acción de vuelta antes de poder darse por cerrado. El estado real granular
+// sigue viajando en `workflowStatus`; esto solo cambia el texto que se muestra.
 export const WORKFLOW_LABEL: Record<ReportWorkflowStatus, string> = {
-  READY_FOR_REVIEW: "Para revisar",
-  CHANGES_REQUESTED: "Cambios pedidos",
-  APPROVED: "Aprobado",
-  SIGNING: "Firmando",
-  SIGNED: "Firmado",
-  SIGNING_FAILED: "Falló la firma",
+  READY_FOR_REVIEW: "Por revisar",
+  CHANGES_REQUESTED: "Devuelto",
+  APPROVED: "Ratificado",
+  SIGNING: "Ratificado",
+  SIGNED: "Ratificado",
+  SIGNING_FAILED: "Devuelto",
 };
 
 export const ORIENTATION_LABEL: Record<Orientation, string> = {

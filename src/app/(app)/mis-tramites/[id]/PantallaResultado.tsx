@@ -41,13 +41,13 @@ type Evaluacion = "RECOVERABLE" | "IRRECOVERABLE";
 
 const ESTADO: Record<ReportWorkflowStatus, { texto: string; chip: string; aviso?: { tono: "info" | "ok" | "obs" | "mal"; texto: string } }> = {
   READY_FOR_REVIEW: {
-    texto: "Para revisar",
+    texto: "Por revisar",
     chip: "bg-blue-50 text-[var(--atm-azul)]",
   },
+  // Sin aviso: el chip ya lo dice, y el historial de abajo trae el motivo.
   CHANGES_REQUESTED: {
-    texto: "Cambios pedidos",
+    texto: "Devuelto",
     chip: "bg-amber-50 text-[var(--atm-obs)]",
-    aviso: { tono: "obs", texto: "Enviaste una modificación. El informe queda a la espera de corrección; puedes ratificarlo igual si decides mantenerlo." },
   },
   APPROVED: {
     texto: "Ratificado",
@@ -55,17 +55,17 @@ const ESTADO: Record<ReportWorkflowStatus, { texto: string; chip: string; aviso?
     aviso: { tono: "ok", texto: "Ya ratificaste este informe." },
   },
   SIGNING: {
-    texto: "Generando documento",
-    chip: "bg-blue-50 text-[var(--atm-azul)]",
+    texto: "Ratificado",
+    chip: "bg-green-50 text-[var(--atm-ok)]",
     aviso: { tono: "info", texto: "El documento firmado se está generando. Vuelve a entrar en unos segundos." },
   },
   SIGNED: {
-    texto: "Firmado",
+    texto: "Ratificado",
     chip: "bg-green-50 text-[var(--atm-ok)]",
     aviso: { tono: "ok", texto: "Informe firmado. El documento final está disponible para descargar." },
   },
   SIGNING_FAILED: {
-    texto: "Falló la firma",
+    texto: "Devuelto",
     chip: "bg-red-50 text-[var(--atm-mal)]",
     aviso: { tono: "mal", texto: "No se pudo generar el documento firmado. Avisa al administrador para reintentarlo." },
   },
@@ -143,11 +143,11 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     ].join("\n");
     try {
       await api(`/reports/${rep.id}/reviews`, { json: { comments } });
-      setMsg({ ok: true, texto: "Modificación enviada." });
+      setMsg({ ok: true, texto: "Corrección guardada. Puedes ratificar el informe con este cambio." });
       setModo("ver");
       await cargar();
     } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo enviar." });
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo guardar la corrección." });
     } finally {
       setBusy(false);
     }
@@ -187,6 +187,11 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const cap = rep.capabilities;
   const editando = modo === "modificar";
   const estado = ESTADO[rep.workflowStatus];
+  // Señal de conformidad con la IA: si hubo una corrección del médico antes de
+  // ratificar (esta versión), la propuesta original no se sostuvo tal cual.
+  // Con esto se puede medir, caso a caso, cuándo la IA acertó y cuándo no.
+  const huboCorreccion = rep.reviews.some((r) => r.decision === "CHANGES_REQUESTED");
+  const yaRatificado = rep.reviews.some((r) => r.decision === "APPROVED");
   const propuestaActual = rep.proposal.recoverableChecked
     ? "Salud recuperable"
     : rep.proposal.irrecoverableChecked
@@ -207,7 +212,14 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               Versión {rep.version} · preinforme del {fecha(rep.createdAt)}
             </p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
+          <div className="flex flex-col items-end gap-1">
+            <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
+            {yaRatificado && (
+              <span className="text-[11px] text-zinc-400">
+                {huboCorreccion ? "Con corrección del médico" : "Conforme con la propuesta de la IA"}
+              </span>
+            )}
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--atm-linea)] pt-3">
           <button
@@ -368,7 +380,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
             {[...rep.reviews].reverse().map((r) => (
               <li key={r.id} className="px-5 py-3 text-sm">
                 <p className={r.decision === "APPROVED" ? "font-medium text-[var(--atm-ok)]" : "font-medium text-[var(--atm-obs)]"}>
-                  {r.decision === "APPROVED" ? "Ratificado" : "Modificación solicitada"}
+                  {r.decision === "APPROVED" ? "Ratificado" : "Corrección del médico"}
                   <span className="ml-2 font-normal text-xs text-zinc-400">{fecha(r.createdAt)}</span>
                 </p>
                 {r.comments && <p className="mt-1 whitespace-pre-wrap text-zinc-600">{r.comments}</p>}
@@ -392,14 +404,14 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               </button>
               <button onClick={enviarModificacion} disabled={busy || !conclusion.trim()}
                       className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40">
-                {busy ? "Enviando…" : "Enviar modificación"}
+                {busy ? "Guardando…" : "Guardar corrección"}
               </button>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               {cap.canRequestChanges && (
                 <button onClick={abrirModificar} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
-                  Modificar
+                  No estoy de acuerdo, corregir
                 </button>
               )}
               {cap.canApprove && (

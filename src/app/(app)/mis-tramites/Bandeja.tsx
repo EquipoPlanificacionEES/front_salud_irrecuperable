@@ -11,13 +11,14 @@ type Pestaña = "pendientes" | "historico";
 
 const PENDIENTE = new Set<ReportWorkflowStatus>(["READY_FOR_REVIEW", "CHANGES_REQUESTED"]);
 
+// 3 grupos visuales, igual que WORKFLOW_LABEL en lib/backend.ts.
 const CHIP: Record<ReportWorkflowStatus, { texto: string; clase: string }> = {
-  READY_FOR_REVIEW: { texto: "Para revisar", clase: "bg-blue-50 text-[var(--atm-azul)]" },
-  CHANGES_REQUESTED: { texto: "Cambios pedidos", clase: "bg-amber-50 text-[var(--atm-obs)]" },
+  READY_FOR_REVIEW: { texto: "Por revisar", clase: "bg-blue-50 text-[var(--atm-azul)]" },
+  CHANGES_REQUESTED: { texto: "Devuelto", clase: "bg-amber-50 text-[var(--atm-obs)]" },
   APPROVED: { texto: "Ratificado", clase: "bg-green-50 text-[var(--atm-ok)]" },
-  SIGNING: { texto: "Generando", clase: "bg-blue-50 text-[var(--atm-azul)]" },
-  SIGNED: { texto: "Firmado", clase: "bg-green-50 text-[var(--atm-ok)]" },
-  SIGNING_FAILED: { texto: "Falló la firma", clase: "bg-red-50 text-[var(--atm-mal)]" },
+  SIGNING: { texto: "Ratificado", clase: "bg-green-50 text-[var(--atm-ok)]" },
+  SIGNED: { texto: "Ratificado", clase: "bg-green-50 text-[var(--atm-ok)]" },
+  SIGNING_FAILED: { texto: "Devuelto", clase: "bg-red-50 text-[var(--atm-mal)]" },
 };
 const SIN_INFORME = { texto: "En proceso", clase: "bg-zinc-100 text-zinc-500" };
 

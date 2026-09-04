@@ -132,7 +132,7 @@ export function batchTono(status: string): Tono {
 }
 
 export function workflowTono(w: string): Tono {
-  if (w === "SIGNED" || w === "APPROVED") return "ok";
+  if (w === "SIGNED" || w === "APPROVED" || w === "SIGNING") return "ok";
   if (w === "CHANGES_REQUESTED") return "obs";
   if (w === "SIGNING_FAILED") return "mal";
   return "azul";
