@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PantallaResultado } from "./PantallaResultado";
 
 /**
@@ -419,5 +419,101 @@ describe("PantallaResultado · caso retenido", () => {
     await pintarRetenido();
     expect(screen.getByText(/Conclusión redactada para el expediente/)).toBeDefined();
     expect(screen.getByText(/Licencias encontradas en el expediente/i)).toBeDefined();
+  });
+});
+
+/**
+ * J · LA CORRECCIÓN VIAJA ESTRUCTURADA Y LA PANTALLA MUESTRA LA VERSIÓN NUEVA.
+ *
+ * Antes se serializaba la decisión dentro de `comments` y el backend no la
+ * leía: la pantalla decía «Puedes ratificar el informe con este cambio» y
+ * ratificar aprobaba el informe original. Dos expedientes reales se firmaron
+ * con la conclusión contraria a la del médico.
+ */
+describe("PantallaResultado · corrección estructurada", () => {
+  function respuestas(): Response[] {
+    const base = informe({ canRequestChanges: true, canApprove: true });
+    // La Sección V tiene que existir para que se dibujen las casillas editables.
+    const v1 = {
+      ...base,
+      document: {
+        ...base.document,
+        sections: [
+          ...base.document.sections,
+          { id: "V", title: "V. PROPUESTA DE EVALUACIÓN DE SALUD", fields: [], paragraphs: [] },
+        ],
+      },
+    };
+    const v2 = {
+      ...v1,
+      version: 2,
+      proposal: { recoverableChecked: false, irrecoverableChecked: true, unresolvedNote: null },
+      document: {
+        ...v1.document,
+        sections: [
+          {
+            id: "IV",
+            title: "IV. CONCLUSIÓN GENERAL",
+            fields: [],
+            paragraphs: ["Conclusión escrita por el profesional."],
+          },
+        ],
+      },
+    };
+    const json = (b: unknown) =>
+      new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
+    return [json(v1), json({ newReportSnapshotId: "nuevo", newVersion: 2 }), json(v2)];
+  }
+
+  it("manda assessment y conclusion en `correction`, no dentro del comentario", async () => {
+    const cola = respuestas();
+    const fetchMock = vi.fn(async (_u?: unknown, init?: unknown) => {
+      void _u;
+      void init;
+      return cola.shift() as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: RECTIFICAR }));
+    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+      target: { value: "Conclusión escrita por el profesional." },
+    });
+    // El médico cambia la propuesta: es el caso que motivó todo esto.
+    // El primer radio es IRRECOVERABLE (ver el orden en la pantalla).
+    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: /guardar corrección/i }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
+    const envio = fetchMock.mock.calls[1]?.[1] as { body: string } | undefined;
+    if (!envio) throw new Error("no se registró la llamada de corrección");
+    const cuerpo = JSON.parse(envio.body) as {
+      comments: string;
+      correction: { assessment: string; conclusion: string };
+    };
+    expect(cuerpo.correction.assessment).toBe("IRRECOVERABLE");
+    expect(cuerpo.correction.conclusion).toBe("Conclusión escrita por el profesional.");
+    // La decisión NO se serializa dentro del comentario.
+    expect(cuerpo.comments).not.toMatch(/IV\. CONCLUSIÓN GENERAL:/);
+    expect(cuerpo.comments).not.toMatch(/Salud irrecuperable/i);
+  });
+
+  it("después de guardar muestra la versión nueva, y no invita a ratificar la vieja", async () => {
+    const cola = respuestas();
+    vi.stubGlobal("fetch", vi.fn(async () => cola.shift() as Response));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: RECTIFICAR }));
+    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+      target: { value: "Conclusión escrita por el profesional." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /guardar corrección/i }));
+
+    await waitFor(() => expect(screen.getByText(/Versión 2/)).toBeDefined());
+    expect(screen.getByText(/revísala antes de ratificar/i)).toBeDefined();
+    expect(screen.queryByText(/Puedes ratificar el informe con este cambio/i)).toBeNull();
+    expect(screen.getByText(/Conclusión escrita por el profesional/)).toBeDefined();
   });
 });

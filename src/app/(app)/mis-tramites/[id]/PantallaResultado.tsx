@@ -181,21 +181,39 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     if (!rep || conclusion.trim().length < 1) return;
     setBusy(true);
     setMsg(null);
-    const comments = [
-      "MODIFICACIÓN DEL MÉDICO",
-      "",
-      "IV. CONCLUSIÓN GENERAL:",
-      conclusion.trim(),
-      "",
-      "V. PROPUESTA DE EVALUACIÓN:",
-      evaluacion === "RECOVERABLE" ? "Salud recuperable" : "Salud irrecuperable",
-      ...(nota.trim() ? ["", `Nota: ${nota.trim()}`] : []),
-    ].join("\n");
+    /**
+     * LA CORRECCIÓN VA EN CAMPOS, NO EN EL COMENTARIO.
+     *
+     * Esto serializaba antes la decisión dentro de `comments` —"V. PROPUESTA DE
+     * EVALUACIÓN:\nSalud irrecuperable"— y el backend no la leía: ratificar
+     * aprobaba el informe original. Dos expedientes se firmaron diciendo lo
+     * contrario de lo que su médico había decidido. Ahora `correction` viaja
+     * estructurada y el servidor produce con ella la versión siguiente.
+     */
     try {
-      await api(`/reports/${rep.id}/reviews`, { json: { comments } });
-      setMsg({ ok: true, texto: "Corrección guardada. Puedes ratificar el informe con este cambio." });
+      const r = await api<{ newReportSnapshotId?: string; newVersion?: number }>(
+        `/reports/${rep.id}/reviews`,
+        {
+          json: {
+            comments: "El profesional no coincide con la propuesta y la corrigió.",
+            correction: {
+              assessment: evaluacion,
+              conclusion: conclusion.trim(),
+              ...(nota.trim() ? { note: nota.trim() } : {}),
+            },
+          },
+        },
+      );
       setModo("ver");
+      // Se recarga el caso: la ficha pasa a mostrar la versión NUEVA, con la
+      // conclusión y la casilla del médico. Ratificar actúa sobre ésa.
       await cargar();
+      setMsg({
+        ok: true,
+        texto: r.newVersion
+          ? `Corrección guardada. Ésta es la versión ${r.newVersion} del informe, ya con tu conclusión y tu propuesta: revísala antes de ratificar.`
+          : "Corrección guardada. Revisa la nueva versión del informe antes de ratificar.",
+      });
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo guardar la corrección." });
     } finally {
