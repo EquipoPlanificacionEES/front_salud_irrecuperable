@@ -53,6 +53,7 @@ function informe(
     hasActiveSignature?: boolean;
   },
   licenses: ReturnType<typeof licencia>[] = SETENTA_Y_SIETE_INDETERMINADAS,
+  thresholdStatus: "MET" | "NOT_MET" | "INDETERMINATE" | null = "NOT_MET",
 ) {
   return {
     id: "00000000-0000-4000-8000-000000000001",
@@ -123,6 +124,7 @@ function informe(
         },
       ],
     },
+    thresholdStatus,
     reviews: [],
     draftArtifact: { downloadUrl: "/api/v1/reports/x/download" },
     finalArtifact: null,
@@ -149,8 +151,9 @@ afterEach(() => {
 async function pintar(
   capabilities: Parameters<typeof informe>[0],
   licenses?: Parameters<typeof informe>[1],
+  thresholdStatus?: Parameters<typeof informe>[2],
 ) {
-  vi.stubGlobal("fetch", fetchDevolviendo(informe(capabilities, licenses)));
+  vi.stubGlobal("fetch", fetchDevolviendo(informe(capabilities, licenses, thresholdStatus)));
   render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
   await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 }
@@ -289,5 +292,64 @@ describe("PantallaResultado · universo de licencias", () => {
     expect(screen.getByText("Reducidas:")).toBeDefined();
     expect(screen.getByText("Rechazadas:")).toBeDefined();
     expect(screen.getByText("Autorizadas:")).toBeDefined();
+  });
+});
+
+/**
+ * UN CERO NO PUEDE HACER DE VEREDICTO.
+ *
+ * `countsForThreshold` vale false tanto cuando el umbral no se alcanza como
+ * cuando no se puede determinar si se alcanza, así que contarlo en el navegador
+ * no distingue las dos cosas. El expediente real: 73 licencias autorizadas con
+ * el tipo sin determinar, `thresholdStatus: INDETERMINATE`, y en pantalla un
+ * «Computables para el umbral: 0» que el médico lee como «no alcanza».
+ */
+describe("PantallaResultado · umbral contractual", () => {
+  const AUTORIZADAS_SIN_TIPO = [
+    licencia(1, "AUTORIZADA"),
+    licencia(2, "AUTORIZADA"),
+    licencia(3, "REDUCIDA"),
+  ];
+
+  it("INDETERMINATE: no muestra el cero aislado", async () => {
+    await pintar(PUEDE_ACTUAR, AUTORIZADAS_SIN_TIPO, "INDETERMINATE");
+
+    expect(screen.queryByText(/Computables para el umbral/i)).toBeNull();
+  });
+
+  it("INDETERMINATE: lo dice, y dice dónde consta el motivo", async () => {
+    await pintar(PUEDE_ACTUAR, AUTORIZADAS_SIN_TIPO, "INDETERMINATE");
+
+    expect(screen.getByText(/Umbral contractual/i)).toBeDefined();
+    expect(screen.getByText(/no determinable/i)).toBeDefined();
+    expect(screen.getByText(/limitaciones de la Secci[oó]n IV/i)).toBeDefined();
+  });
+
+  it("INDETERMINATE: el universo hallado se sigue viendo entero", async () => {
+    await pintar(PUEDE_ACTUAR, AUTORIZADAS_SIN_TIPO, "INDETERMINATE");
+
+    expect(screen.getByText(/Licencias encontradas en el expediente/i)).toBeDefined();
+    expect(screen.getByText("Autorizadas:")).toBeDefined();
+    expect(screen.getByText("Reducidas:")).toBeDefined();
+  });
+
+  it("NOT_MET conserva el recuento: el cero ahí sí es un dato", async () => {
+    await pintar(PUEDE_ACTUAR, undefined, "NOT_MET");
+
+    expect(screen.getByText(/Computables para el umbral/i)).toBeDefined();
+    expect(screen.queryByText(/Umbral contractual/i)).toBeNull();
+  });
+
+  it("MET conserva el recuento", async () => {
+    await pintar(PUEDE_ACTUAR, [licencia(1, "AUTORIZADA", true)], "MET");
+
+    expect(screen.getByText(/Computables para el umbral/i)).toBeDefined();
+    expect(screen.queryByText(/Umbral contractual/i)).toBeNull();
+  });
+
+  it("null (snapshot antiguo) se comporta como antes y no rompe", async () => {
+    await pintar(PUEDE_ACTUAR, undefined, null);
+
+    expect(screen.getByText(/Computables para el umbral/i)).toBeDefined();
   });
 });

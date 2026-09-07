@@ -60,6 +60,15 @@ interface Report {
   document: DocumentoInforme;
   proposal: { recoverableChecked: boolean; irrecoverableChecked: boolean; unresolvedNote: string | null };
   readiness: { status: "READY" | "NOT_READY"; blockers: { code: string; statement: string }[] };
+  /**
+   * Estado del umbral contractual, ya calculado por el backend. `null` en
+   * snapshots congelados antes de que la cifra existiera.
+   *
+   * No se deduce del recuento de `countsForThreshold`: un cero significa a la
+   * vez «no alcanza» y «no se puede determinar», y son cosas distintas para
+   * quien firma.
+   */
+  thresholdStatus: "MET" | "NOT_MET" | "INDETERMINATE" | null;
   reviews: Review[];
   draftArtifact: { downloadUrl: string } | null;
   finalArtifact: { downloadUrl: string } | null;
@@ -390,9 +399,30 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                             <span className="font-medium text-zinc-900">{g.cantidad}</span>
                           </li>
                         ))}
+                        {/* UN CERO NO PUEDE HACER DE VEREDICTO.
+                            Con el umbral INDETERMINATE, «Computables para el
+                            umbral: 0» se lee como «no alcanza», y lo que ocurre
+                            es que no hay con qué juzgarlo: en 32894823 las 73
+                            licencias autorizadas tienen el tipo sin determinar.
+                            El estado lo dice el backend; aquí no se deduce de
+                            contar `countsForThreshold`, que vale cero en los dos
+                            casos. MET y NOT_MET siguen mostrando el recuento. */}
                         <li>
-                          <span className="text-zinc-500">Computables para el umbral: </span>
-                          <span className="font-medium text-zinc-900">{censo.computables}</span>
+                          {rep.thresholdStatus === "INDETERMINATE" ? (
+                            <>
+                              <span className="text-zinc-500">Umbral contractual: </span>
+                              <span className="font-medium text-[var(--atm-obs)]">no determinable</span>
+                              <span className="text-zinc-500">
+                                {" "}
+                                — el motivo consta en las limitaciones de la Sección IV
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-zinc-500">Computables para el umbral: </span>
+                              <span className="font-medium text-zinc-900">{censo.computables}</span>
+                            </>
+                          )}
                         </li>
                       </ul>
                       <details className="mt-2">
