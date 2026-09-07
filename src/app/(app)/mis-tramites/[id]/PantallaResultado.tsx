@@ -69,6 +69,15 @@ interface Report {
    * quien firma.
    */
   thresholdStatus: "MET" | "NOT_MET" | "INDETERMINATE" | null;
+  /**
+   * Retención operacional activa. `null` casi siempre.
+   *
+   * El backend ya cierra las dos capacidades cuando viene, así que los botones
+   * desaparecen solos; esto existe para DECIRLO en vez de dejar la ficha muda.
+   * `statement` llega redactado y sin códigos: el motivo interno no viaja al
+   * médico.
+   */
+  hold: { active: true; statement: string } | null;
   reviews: Review[];
   draftArtifact: { downloadUrl: string } | null;
   finalArtifact: { downloadUrl: string } | null;
@@ -291,6 +300,15 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
             )}
         </div>
       </div>
+
+      {/* RETENCIÓN OPERACIONAL. Va lo primero, antes que cualquier otro aviso:
+          es la razón por la que no hay botones, y leerla después de bajar el
+          informe entero es leerla tarde. */}
+      {rep.hold && (
+        <p className={`rounded-lg border px-4 py-3 text-sm font-medium ${TONO.obs}`}>
+          {rep.hold.statement}
+        </p>
+      )}
 
       {/* Avisos de estado / bloqueos / advertencias */}
       {estado.aviso && !editando && (

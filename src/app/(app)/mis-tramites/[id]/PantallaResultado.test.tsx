@@ -125,6 +125,7 @@ function informe(
       ],
     },
     thresholdStatus,
+    hold: null,
     reviews: [],
     draftArtifact: { downloadUrl: "/api/v1/reports/x/download" },
     finalArtifact: null,
@@ -351,5 +352,55 @@ describe("PantallaResultado · umbral contractual", () => {
     await pintar(PUEDE_ACTUAR, undefined, null);
 
     expect(screen.getByText(/Computables para el umbral/i)).toBeDefined();
+  });
+});
+
+
+/**
+ * EXPEDIENTE RETENIDO.
+ *
+ * El backend ya cierra las dos capacidades, así que los botones desaparecen
+ * solos. Lo que estas pruebas defienden es que la ficha lo DIGA —una pantalla
+ * sin botones y sin explicación se lee como un fallo— y que lo diga sin el
+ * motivo interno: por qué está retenido es un asunto administrativo.
+ */
+describe("PantallaResultado · caso retenido", () => {
+  const RETENIDO = {
+    active: true as const,
+    statement: "Este caso se encuentra temporalmente retenido para revisión administrativa.",
+  };
+
+  async function pintarRetenido() {
+    const cuerpo = {
+      ...informe({ canRequestChanges: false, canApprove: false }),
+      hold: RETENIDO,
+    };
+    vi.stubGlobal("fetch", fetchDevolviendo(cuerpo));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+  }
+
+  it("dice que está retenido", async () => {
+    await pintarRetenido();
+    expect(screen.getByText(/temporalmente retenido para revisión administrativa/i)).toBeDefined();
+  });
+
+  it("no ofrece ratificar ni corregir", async () => {
+    await pintarRetenido();
+    expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
+    expect(screen.queryByRole("button", { name: RECTIFICAR })).toBeNull();
+  });
+
+  it("no enseña el motivo interno de la retención", async () => {
+    await pintarRetenido();
+    const t = document.body.textContent ?? "";
+    expect(t).not.toContain("SOURCE_IDENTITY_CONFLICT");
+    expect(t).not.toContain("DUPLICATE_SOURCE_DOCUMENT");
+  });
+
+  it("el informe se sigue leyendo entero: retenido no es invisible", async () => {
+    await pintarRetenido();
+    expect(screen.getByText(/Conclusión redactada para el expediente/)).toBeDefined();
+    expect(screen.getByText(/Licencias encontradas en el expediente/i)).toBeDefined();
   });
 });
