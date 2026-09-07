@@ -197,33 +197,15 @@ export const CASE_STATUS_LABEL: Record<string, string> = {
   DELIVERED: "Entregado",
 };
 
-// Otros tokens del backend que asoman en el texto de las secciones / anexo.
-const TOKEN_ES: Record<string, string> = {
-  ...CASE_STATUS_LABEL,
-  CLIENT_CONFIRMED: "Confirmado por el cliente",
-  PENDING_CLIENT_CONFIRMATION: "Pendiente de confirmación del cliente",
-  NOT_CONFIRMED: "Sin confirmar",
-  CONSIDERED: "Considerado",
-  ILLEGIBLE: "Ilegible",
-  MISSING: "Faltante",
-  NOT_RELEVANT: "No relevante",
-  RECOVERABLE: "Recuperable",
-  IRRECOVERABLE: "No recuperable",
-  INDETERMINATE: "Indeterminada",
-  EJECUTORIADO: "Ejecutoriado",
-  READY: "Listo",
-  NOT_READY: "No listo",
-  CRONICA: "Crónica",
-  AGUDA: "Aguda",
-  NO_CONSTA: "No consta",
-  NO_DETERMINADA: "No determinada",
-  NO_EVALUABLE: "No evaluable",
-};
-
-/** Traduce un token en MAYÚSCULAS del backend; deja intacto cualquier otro texto. */
-export function es(valor: string): string {
-  if (/^[A-Z][A-Z0-9_]+$/.test(valor.trim())) {
-    return TOKEN_ES[valor.trim()] ?? valor;
-  }
-  return valor;
-}
+// AQUÍ NO VUELVE UN TRADUCTOR DE TOKENS INTERNOS.
+//
+// Existió una función `es()` que castellanizaba tokens del volcado interno del
+// snapshot —`CLIENT_CONFIRMED`, `AI_INFERRED`, estados de política— para poder
+// pintarlos en la ficha del médico. Traducir un dato interno no lo convierte en
+// un dato del expediente: «Criterio de período: Confirmado por el cliente» le
+// dice tan poco a quien firma como `CLIENT_CONFIRMED`, y su presencia era la
+// señal de que la pantalla estaba leyendo la fuente equivocada.
+//
+// Lo que ve el médico sale de `report.document`, que el backend compone ya
+// redactado y sin códigos. Si algún día hace falta traducir un token para una
+// pantalla ADMINISTRATIVA, que viva en esa pantalla y no aquí.

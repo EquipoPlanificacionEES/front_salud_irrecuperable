@@ -2,19 +2,47 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import { es, type ReportWorkflowStatus } from "@/lib/backend";
+import { type ReportWorkflowStatus } from "@/lib/backend";
 import { descargarInformePdf, type DocumentoInforme } from "@/lib/informe-pdf";
-import { desglosarLicencias, fraseAnio, descDx, type LicenciaBackend } from "@/lib/licencias";
+import {
+  censarLicencias,
+  diasLicencia,
+  etiquetaEstadoSingular,
+  periodoLicencia,
+  type LicenciaBackend,
+} from "@/lib/licencias";
 
-// GET  /api/v1/cases/:caseId/report      → preinforme (secciones I–V + capacidades). El ANEXO no se muestra.
+// GET  /api/v1/cases/:caseId/report      → preinforme + capacidades.
 // POST /api/v1/reports/:reportId/approve  {comments?}  → RATIFICAR (usa la firma cargada del médico)
 // POST /api/v1/reports/:reportId/reviews  {comments}   → MODIFICAR: nueva redacción de IV y V
 //
 // El backend no permite reescribir el informe en sitio (ReportSnapshot es inmutable):
 // "Modificar" manda la nueva conclusión (IV) y propuesta (V) como corrección.
+//
+// LO QUE VE EL MÉDICO SALE DE `report.document` Y DE NADA MÁS.
+//
+// La respuesta trae también `sections`: el VOLCADO INTERNO del snapshot, con
+// los códigos de razón, los estados de política y los guardarraíles que existen
+// para la administración, la auditoría y el QA. Esta pantalla lo renderizó
+// durante un tiempo, y el médico llegó a leer, sobre expedientes reales:
+//
+//   · «Criterio de período: Confirmado por el cliente» (`CLIENT_CONFIRMED`);
+//   · «[REC-2] …», «[NOR-3] …» — códigos de indicador;
+//   · «Verificar que la falta de evidencia…», «La adherencia al tratamiento…»
+//     — guía dirigida a quien revisa, no al expediente;
+//   · «Ninguna cantidad de indicadores reemplaza el juicio profesional»
+//     — un guardarraíl del motor.
+//
+// Nada de eso significa nada para quien firma, y su sitio no es la pantalla de
+// quien firma. `document` es la proyección que el backend compone con
+// `buildClientReport` — la MISMA que imprime el .docx y el PDF— y viene limpia
+// de origen. Por eso `sections` NI SIQUIERA ESTÁ DECLARADO en `Report`: no se
+// puede volver a pintar por descuido lo que el tipo no conoce.
+//
+// De la respuesta se siguen usando, aparte del documento, sólo los metadatos
+// que la interfaz necesita para actuar: versión, workflow, readiness,
+// capacidades, historial, descargas y el detalle de licencias.
 
-interface Field { label: string; value: string }
-interface Section { id: string; title: string; narrative: string; fields: Field[]; items: string[] }
 interface Review {
   id: string;
   decision: "APPROVED" | "CHANGES_REQUESTED";
@@ -27,11 +55,8 @@ interface Report {
   version: number;
   createdAt: string;
   workflowStatus: ReportWorkflowStatus;
-  // Volcado interno del snapshot: es lo que se muestra EN PANTALLA al médico,
-  // con sus indicadores y sus advertencias. No se imprime.
-  sections: Section[];
   // El documento entregable, ya compuesto por el backend. Es lo ÚNICO que se
-  // imprime o descarga. Ver src/lib/informe-pdf.ts.
+  // muestra, se imprime o se descarga. Ver src/lib/informe-pdf.ts.
   document: DocumentoInforme;
   proposal: { recoverableChecked: boolean; irrecoverableChecked: boolean; unresolvedNote: string | null };
   readiness: { status: "READY" | "NOT_READY"; blockers: { code: string; statement: string }[] };
@@ -100,12 +125,12 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const cargar = useCallback(async (): Promise<Report | null> => {
     setError(null);
     try {
+      // `/cases/:caseId/report` devuelve SIEMPRE el snapshot vigente del caso
+      // (el más reciente sin `supersededAt`); la pantalla no elige versión ni
+      // ordena artefactos por su cuenta.
       const r = await api<Report>(`/cases/${caseId}/report`);
-      // El ANEXO no se muestra NI se incluye en ningún documento: se descarta aquí,
-      // en el único punto donde entran los datos del informe.
-      const limpio = { ...r, sections: r.sections.filter((sec) => sec.id !== "ANEXO") };
-      setRep(limpio);
-      return limpio;
+      setRep(r);
+      return r;
     } catch (e) {
       setError(
         e instanceof ApiFallo
@@ -125,7 +150,9 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
 
   function abrirModificar() {
     if (!rep) return;
-    setConclusion(rep.sections.find((s) => s.id === "IV")?.narrative ?? "");
+    // El punto de partida de la corrección es la conclusión TAL COMO SE
+    // ENTREGA, no el volcado interno: el médico reescribe lo que va a firmar.
+    setConclusion((rep.document.sections.find((s) => s.id === "IV")?.paragraphs ?? []).join("\n\n"));
     setEvaluacion(rep.proposal.recoverableChecked ? "RECOVERABLE" : "IRRECOVERABLE");
     setNota(rep.proposal.unresolvedNote ?? "");
     setMsg(null);
@@ -197,11 +224,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   // Con esto se puede medir, caso a caso, cuándo la IA acertó y cuándo no.
   const huboCorreccion = rep.reviews.some((r) => r.decision === "CHANGES_REQUESTED");
   const yaRatificado = rep.reviews.some((r) => r.decision === "APPROVED");
-  const propuestaActual = rep.proposal.recoverableChecked
-    ? "Salud recuperable"
-    : rep.proposal.irrecoverableChecked
-      ? "Salud irrecuperable"
-      : "Sin marcar";
   const inputBase = "w-full rounded-lg border border-[var(--atm-linea)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]";
   /**
    * RECTIFICAR Y RATIFICAR SON INDEPENDIENTES.
@@ -217,7 +239,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * decidir nada.
    */
   const puedeActuar = cap.canApprove || cap.canRequestChanges;
-  const desglose = desglosarLicencias(rep.licenses);
+  const censo = censarLicencias(rep.licenses);
 
   return (
     <div className="space-y-4">
@@ -282,7 +304,12 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
 
       {/* Documento */}
       <div className="overflow-hidden rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
-        {rep.sections.map((s) => {
+        {rep.document.draftNotice && (
+          <p className="border-b border-[var(--atm-linea)] bg-[var(--atm-fondo)] px-5 py-2 text-xs text-zinc-500">
+            {rep.document.draftNotice}
+          </p>
+        )}
+        {rep.document.sections.map((s) => {
           const esEditable = editando && EDITABLES.has(s.id);
           const bloqueada = editando && !EDITABLES.has(s.id);
           return (
@@ -326,60 +353,90 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                   </div>
                   <textarea className={inputBase} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Nota (opcional)" />
                 </div>
-              ) : s.id === "II" && desglose ? (
-                <div className="space-y-3 text-sm">
-                  {desglose.periodo && (
-                    <p><span className="text-zinc-500">Período evaluado: </span><span className="font-medium text-zinc-900">{desglose.periodo}</span></p>
-                  )}
-                  <ul className="space-y-1.5">
-                    {desglose.porAnio.map((a) => (
-                      <li key={a.anio} className="leading-relaxed text-zinc-700">{fraseAnio(a, descDx)}</li>
-                    ))}
-                  </ul>
-                  <p className="border-t border-[var(--atm-linea)] pt-2">
-                    <span className="text-zinc-500">Total licencias evaluadas (autorizadas): </span>
-                    <span className="font-semibold text-zinc-900">{desglose.totalAutorizadas}</span>
-                    <span className="text-zinc-500"> · Total días: </span>
-                    <span className="font-semibold text-zinc-900">{desglose.totalDiasCompletos ? desglose.totalDiasAutorizados : `≥ ${desglose.totalDiasAutorizados}`}</span>
-                  </p>
-                  {desglose.rechazadas.length > 0 && (
-                    <p className="text-[var(--atm-obs)]">
-                      Licencias rechazadas (no computadas): {desglose.rechazadas.length} —{" "}
-                      {desglose.rechazadas.map((r) => `Folio ${r.folio}, ${r.periodo}, ${r.dias} día(s), ${r.cie10} ${descDx(r.cie10)}`).join("; ")}.
-                    </p>
-                  )}
-                  {/* Los demás datos administrativos (FULME, TPI…) siguen apareciendo abajo. */}
-                  {s.fields.filter((f) => /FULME|TPI|Criterio/.test(f.label)).length > 0 && (
-                    <dl className="mt-1 grid grid-cols-1 gap-x-8 gap-y-1.5 border-t border-[var(--atm-linea)] pt-2 sm:grid-cols-2">
-                      {s.fields.filter((f) => /FULME|TPI|Criterio/.test(f.label)).map((f, i) => (
-                        <div key={i} className="flex gap-2"><dt className="shrink-0 text-zinc-500">{f.label}:</dt><dd className="text-zinc-800">{es(f.value)}</dd></div>
-                      ))}
-                    </dl>
-                  )}
-                </div>
               ) : (
                 <>
-                  {s.narrative && <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">{s.narrative}</p>}
                   {s.fields.length > 0 && (
-                    <dl className="mt-2 grid grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2">
+                    <dl className="grid grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2">
                       {s.fields.map((f, i) => (
                         <div key={i} className="flex gap-2 text-sm">
                           <dt className="shrink-0 text-zinc-500">{f.label}:</dt>
-                          <dd className="text-zinc-800">{es(f.value)}</dd>
+                          <dd className="text-zinc-800">{f.value}</dd>
                         </div>
                       ))}
                     </dl>
                   )}
-                  {s.items.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-zinc-700">
-                      {s.items.map((it, i) => <li key={i}>{es(it)}</li>)}
-                    </ul>
-                  )}
-                  {s.id === "V" && (
-                    <p className="mt-1 text-sm">
-                      <span className="text-zinc-500">Casilla marcada: </span>
-                      <span className="font-medium text-zinc-900">{propuestaActual}</span>
+                  {s.paragraphs.map((p, i) => (
+                    <p key={i} className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                      {p}
                     </p>
+                  ))}
+
+                  {/* EL UNIVERSO DE LICENCIAS, al lado de los totales oficiales.
+                      Los totales de arriba los computa el backend y son los que
+                      se imprimen. Esto es el inventario de lo hallado, y está
+                      aquí porque «Total licencias autorizadas: 0» se leyó como
+                      «este expediente no tiene licencias» en un caso que traía
+                      77, todas con el estado administrativo sin determinar. */}
+                  {s.id === "II" && censo && (
+                    <div className="mt-3 border-t border-[var(--atm-linea)] pt-3 text-sm">
+                      <p className="text-zinc-700">
+                        <span className="text-zinc-500">Licencias encontradas en el expediente: </span>
+                        <span className="font-semibold text-zinc-900">{censo.encontradas}</span>
+                      </p>
+                      <ul className="mt-1.5 space-y-0.5">
+                        {censo.porEstado.map((g) => (
+                          <li key={g.estado}>
+                            <span className="text-zinc-500">{g.etiqueta}: </span>
+                            <span className="font-medium text-zinc-900">{g.cantidad}</span>
+                          </li>
+                        ))}
+                        <li>
+                          <span className="text-zinc-500">Computables para el umbral: </span>
+                          <span className="font-medium text-zinc-900">{censo.computables}</span>
+                        </li>
+                      </ul>
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs font-medium text-[var(--atm-azul)]">
+                          Ver el detalle de las {censo.encontradas} licencias
+                        </summary>
+                        <div className="mt-2 max-h-80 overflow-auto rounded-lg border border-[var(--atm-linea)]">
+                          <table className="w-full text-xs">
+                            <thead className="sticky top-0 bg-[var(--atm-fondo)] text-left text-zinc-600">
+                              <tr>
+                                <th className="px-2 py-1.5 font-medium">Folio</th>
+                                <th className="px-2 py-1.5 font-medium">Período</th>
+                                <th className="px-2 py-1.5 font-medium">CIE-10</th>
+                                <th className="px-2 py-1.5 font-medium">Estado</th>
+                                <th className="px-2 py-1.5 font-medium">Días autorizados</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rep.licenses.map((l, i) => (
+                                <tr key={`${l.folio}-${i}`} className="border-t border-[var(--atm-linea)]">
+                                  <td className="px-2 py-1 font-mono text-zinc-800">{l.folio}</td>
+                                  <td className="px-2 py-1 text-zinc-700">{periodoLicencia(l)}</td>
+                                  <td className="px-2 py-1 text-zinc-700">{l.cie10}</td>
+                                  <td className="px-2 py-1 text-zinc-700">{etiquetaEstadoSingular(l.effectiveState)}</td>
+                                  <td className="px-2 py-1 text-zinc-700">{diasLicencia(l)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    </div>
+                  )}
+
+                  {/* La propuesta, con las MISMAS casillas que salen impresas. */}
+                  {s.id === "V" && (
+                    <div className="mt-1 space-y-1 text-sm">
+                      {rep.document.proposal.options.map((o, i) => (
+                        <p key={i} className={o.checked ? "font-semibold text-zinc-900" : "text-zinc-600"}>
+                          <span className="font-mono">{o.checked ? "[X]" : "[  ]"}</span> {o.label}
+                        </p>
+                      ))}
+                      {rep.document.proposal.note && <p className="text-zinc-600">{rep.document.proposal.note}</p>}
+                    </div>
                   )}
                 </>
               )}
