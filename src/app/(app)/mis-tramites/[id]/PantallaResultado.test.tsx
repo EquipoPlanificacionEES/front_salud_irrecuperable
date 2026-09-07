@@ -169,10 +169,27 @@ describe("PantallaResultado · acción de rectificar", () => {
     expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
   });
 
-  it("A · y el bloqueador clínico se sigue mostrando: informar no es impedir", async () => {
+  /**
+   * LOS BLOQUEADORES DE `readiness` NO SE LE ENSEÑAN AL MÉDICO.
+   *
+   * Esta prueba afirmaba lo contrario. Se invirtió al mirar qué dicen de verdad
+   * esos bloqueadores en el lote entero: los dos únicos que existen son
+   * «El análisis que sustenta el informe no está validado para producción» y
+   * «La verificación transversal del modelo de vista (RPT-QA) encontró al menos
+   * un hallazgo crítico». Son estado de ingeniería —uno nombra un componente
+   * interno y su código— y no dicen nada del expediente que el médico tiene
+   * delante. Lo que sí necesita saber, las limitaciones factuales de los
+   * antecedentes, va dentro del informe, en la Sección IV.
+   *
+   * Que la restricción no se explique con jerga interna no significa dejarla
+   * inexplicada: rectificar sigue ofrecido, que es la salida que le corresponde.
+   */
+  it("A · el bloqueador técnico NO se muestra, y rectificar se sigue ofreciendo", async () => {
     await pintar({ canRequestChanges: true, canApprove: false });
 
-    expect(screen.getByText(/no está validado para producción/)).toBeDefined();
+    expect(screen.queryByText(/no está validado para producción/)).toBeNull();
+    expect(screen.queryByText(/RPT-QA/)).toBeNull();
+    expect(screen.queryByText(/no está listo para finalizar/i)).toBeNull();
     expect(screen.getByRole("button", { name: RECTIFICAR })).toBeDefined();
   });
 

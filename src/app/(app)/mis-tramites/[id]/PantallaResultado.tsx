@@ -237,11 +237,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const cap = rep.capabilities;
   const editando = modo === "modificar";
   const estado = ESTADO[rep.workflowStatus];
-  // Señal de conformidad con la IA: si hubo una corrección del médico antes de
-  // ratificar (esta versión), la propuesta original no se sostuvo tal cual.
-  // Con esto se puede medir, caso a caso, cuándo la IA acertó y cuándo no.
-  const huboCorreccion = rep.reviews.some((r) => r.decision === "CHANGES_REQUESTED");
-  const yaRatificado = rep.reviews.some((r) => r.decision === "APPROVED");
   const inputBase = "w-full rounded-lg border border-[var(--atm-linea)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]";
   /**
    * RECTIFICAR Y RATIFICAR SON INDEPENDIENTES.
@@ -270,14 +265,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               Versión {rep.version} · preinforme del {fecha(rep.createdAt)}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
-            {yaRatificado && (
-              <span className="text-[11px] text-zinc-400">
-                {huboCorreccion ? "Con corrección del médico" : "Conforme con la propuesta de la IA"}
-              </span>
-            )}
-          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--atm-linea)] pt-3">
           <button
@@ -313,14 +301,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       {/* Avisos de estado / bloqueos / advertencias */}
       {estado.aviso && !editando && (
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO[estado.aviso.tono]}`}>{estado.aviso.texto}</p>
-      )}
-      {rep.readiness.status === "NOT_READY" && (
-        <div className={`rounded-lg border px-4 py-3 text-sm ${TONO.mal}`}>
-          <p className="font-medium">Este informe no está listo para finalizar:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {rep.readiness.blockers.map((b) => <li key={b.code}>{b.statement}</li>)}
-          </ul>
-        </div>
       )}
       {editando && (
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO.info}`}>
@@ -476,12 +456,28 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                   )}
 
                   {/* La propuesta, con las MISMAS casillas que salen impresas. */}
+                  {/* La propuesta, con las MISMAS casillas que salen impresas.
+                      La casilla dibujada es de Diego (28909a1) y se queda: se
+                      parece al formulario que el médico firma en papel mucho más
+                      que un "[X]" monoespaciado. Lo que cambia respecto de su
+                      versión es de dónde salen las opciones — `document.proposal`
+                      y no `rep.proposal`—, para que la Sección V diga exactamente
+                      lo mismo que el .docx y el PDF, que se componen de ahí. */}
                   {s.id === "V" && (
-                    <div className="mt-1 space-y-1 text-sm">
+                    <div className="mt-2 space-y-1.5 text-sm">
                       {rep.document.proposal.options.map((o, i) => (
-                        <p key={i} className={o.checked ? "font-semibold text-zinc-900" : "text-zinc-600"}>
-                          <span className="font-mono">{o.checked ? "[X]" : "[  ]"}</span> {o.label}
-                        </p>
+                        <div key={i} className="flex items-center gap-2">
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center border text-[11px] font-bold leading-none ${
+                              o.checked ? "border-zinc-900 text-zinc-900" : "border-zinc-400 text-transparent"
+                            }`}
+                          >
+                            X
+                          </span>
+                          <span className={o.checked ? "font-medium text-zinc-900" : "text-zinc-600"}>
+                            {o.label.toUpperCase()}
+                          </span>
+                        </div>
                       ))}
                       {rep.document.proposal.note && <p className="text-zinc-600">{rep.document.proposal.note}</p>}
                     </div>

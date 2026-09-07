@@ -6,6 +6,12 @@ export const dynamic = "force-dynamic";
 // /api/* → proxy al backend real (BACKEND_URL). Reenvía método, query, body y cookie;
 // propaga Set-Cookie. La cookie de sesión (httpOnly) la emite/borra el backend.
 
+// Headers que NUNCA se reenvían en la respuesta al navegador: `content-encoding`
+// va aquí porque el `fetch` de Node/Vercel DESCOMPRIME gzip/br automáticamente
+// antes de que este código vea el body — si se reenvía el header original, el
+// navegador recibe texto plano pero cree que viene comprimido y revienta con
+// ERR_CONTENT_DECODING_FAILED. Solo aparece en respuestas grandes porque el
+// backend no comprime las chicas (quedan bajo su umbral de compresión).
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -13,6 +19,7 @@ const HOP_BY_HOP = new Set([
   "upgrade",
   "host",
   "content-length",
+  "content-encoding",
 ]);
 
 async function proxy(req: NextRequest): Promise<Response> {
@@ -30,6 +37,10 @@ async function proxy(req: NextRequest): Promise<Response> {
   req.headers.forEach((v, k) => {
     if (!HOP_BY_HOP.has(k.toLowerCase())) headers.set(k, v);
   });
+  // Le pedimos al backend que NO comprima: así el body que Node nos entrega
+  // coincide siempre con lo que declaramos, sin depender de si undici alcanzó
+  // a descomprimir antes de que armemos la respuesta.
+  headers.set("accept-encoding", "identity");
 
   const init: RequestInit = { method: req.method, headers, redirect: "manual" };
   if (req.method !== "GET" && req.method !== "HEAD") init.body = await req.arrayBuffer();
