@@ -343,3 +343,76 @@ describe("Envoltura", () => {
     expect(Envoltura({ client, children: null })).toBeDefined();
   });
 });
+
+/**
+ * LA REGRESIÓN QUE ENCONTRÓ EL RECORRIDO FUNCIONAL, Y NO LAS PRUEBAS.
+ *
+ * La ficha usa la bandeja como respaldo cuando el informe da 404, con
+ * `enabled: sinInforme`. Pero `enabled: false` NO impide leer lo que ya hay en
+ * caché: como la bandeja se carga en la pantalla anterior, la consulta devolvía
+ * el expediente igualmente y la vista mínima ganaba sobre el informe. Resultado:
+ * un expediente CON informe se mostraba como «todavía no tiene informe».
+ *
+ * Ninguna de las 53 pruebas de la ficha lo vio, porque en ellas la bandeja nunca
+ * estaba cacheada.
+ */
+describe("la ficha con la bandeja ya en caché", () => {
+  it("una consulta deshabilitada SIGUE devolviendo lo que hay en caché", async () => {
+    const client = crearQueryClient();
+    client.setQueryData(queryKeys.doctor.inbox(), CASOS_A);
+    // Es el hecho del que dependía el defecto. Si algún día deja de ser cierto,
+    // esta prueba avisa antes de que alguien "simplifique" la condición.
+    expect(client.getQueryData(queryKeys.doctor.inbox())).toEqual(CASOS_A);
+  });
+
+  it("con informe disponible se muestra el informe, no la vista mínima", async () => {
+    const { PantallaResultado } = await import("@/app/(app)/mis-tramites/[id]/PantallaResultado");
+    const client = crearQueryClient();
+    // La bandeja YA está cargada: es lo que pasa al llegar desde «Mis casos».
+    client.setQueryData(queryKeys.doctor.inbox(), CASOS_A);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: "r1",
+            caseReference: "111",
+            version: 1,
+            workflowStatus: "READY_FOR_REVIEW",
+            createdAt: "2026-09-06T13:07:26.774Z",
+            document: {
+              documentKind: "PRE_REPORT",
+              branding: { documentTitle: "T", institutionalHeading: "H", institutionalSubheading: "S", footerText: "F" },
+              caseReference: "111",
+              sections: [{ id: "I", title: "Sección I", fields: [], paragraphs: ["contenido del informe"] }],
+              proposal: { options: [], note: null },
+              draftNotice: null,
+            },
+            proposal: { recoverableChecked: false, irrecoverableChecked: false, unresolvedNote: null },
+            readiness: { status: "READY", blockers: [] },
+            thresholdStatus: "MET",
+            hold: null,
+            sourceDocument: null,
+            reviews: [],
+            finalArtifact: null,
+            capabilities: {
+              canRequestChanges: true,
+              canApprove: true,
+              canResolveAndApprove: false,
+              hasActiveSignature: true,
+              canDownloadSigned: false,
+            },
+            licenses: [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    pintarConQuery(<PantallaResultado caseId={CASOS_A[0]!.caseId} />, client);
+
+    await waitFor(() => expect(screen.getByText(/contenido del informe/)).toBeDefined());
+    expect(screen.queryByText(/todavía no tiene informe/i)).toBeNull();
+  });
+});

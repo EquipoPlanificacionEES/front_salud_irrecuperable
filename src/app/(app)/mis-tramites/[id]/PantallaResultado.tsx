@@ -261,7 +261,14 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * ahí, no cuesta ninguna petición.
    */
   const sinInforme = informe.error instanceof ApiFallo && informe.error.status === 404;
-  const { data: minima } = useDoctorInbox(seleccionarCaso(caseId), { enabled: sinInforme });
+  const enBandeja = useDoctorInbox(seleccionarCaso(caseId), { enabled: sinInforme }).data;
+  /**
+   * `enabled: false` NO impide leer lo que ya hay en caché: si la bandeja se
+   * cargó en la pantalla anterior —que es lo normal—, esta consulta devuelve el
+   * expediente igualmente. Sin esta condición, la vista mínima ganaba sobre el
+   * informe y un expediente CON informe se mostraba como si no lo tuviera.
+   */
+  const minima = sinInforme ? (enBandeja ?? null) : null;
 
   const error = (() => {
     if (!informe.error) return null;
