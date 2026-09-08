@@ -52,6 +52,7 @@ function informe(
     canApprove: boolean;
     canResolveAndApprove?: boolean;
     hasActiveSignature?: boolean;
+    canDownloadSigned?: boolean;
   },
   licenses: ReturnType<typeof licencia>[] = SETENTA_Y_SIETE_INDETERMINADAS,
   thresholdStatus: "MET" | "NOT_MET" | "INDETERMINATE" | null = "NOT_MET",
@@ -131,7 +132,12 @@ function informe(
     reviews: [],
     draftArtifact: { downloadUrl: "/api/v1/reports/x/download" },
     finalArtifact: null,
-    capabilities: { hasActiveSignature: true, canResolveAndApprove: false, ...capabilities },
+    capabilities: {
+      hasActiveSignature: true,
+      canResolveAndApprove: false,
+      canDownloadSigned: false,
+      ...capabilities,
+    },
     licenses,
   };
 }
@@ -710,3 +716,84 @@ function conSeccionV(base: ReturnType<typeof informe>) {
     },
   };
 }
+
+/**
+ * EN LA FICHA NO SE DESCARGA EL BORRADOR.
+ *
+ * El preinforme se lee entero en esa misma pantalla, así que ofrecer además
+ * «Descargar PDF» y «Descargar preinforme (.docx)» era ofrecer lo mismo tres
+ * veces — y dos de ellas en documentos que no son el del expediente. Lo que sí
+ * se descarga es el informe FIRMADO, que es el que sale de la institución.
+ *
+ * El fixture SIGUE mandando `draftArtifact`, porque la API lo sigue mandando:
+ * lo que se comprueba es que la pantalla no lo ofrezca aunque llegue.
+ */
+const DESCARGA_BORRADOR = /descargar (pdf|preinforme|borrador)/i;
+const DESCARGA_FIRMADO = /descargar informe/i;
+
+describe("PantallaResultado · descargas", () => {
+  it("pendiente: antecedentes sí, borrador no, informe final tampoco", async () => {
+    await pintar({ canRequestChanges: true, canApprove: true });
+
+    expect(screen.getByRole("link", { name: ANTECEDENTES })).toBeDefined();
+    expect(screen.queryByRole("button", { name: DESCARGA_BORRADOR })).toBeNull();
+    expect(screen.queryByRole("link", { name: DESCARGA_BORRADOR })).toBeNull();
+    expect(screen.queryByRole("link", { name: DESCARGA_FIRMADO })).toBeNull();
+    // Y las acciones médicas siguen donde estaban.
+    expect(screen.getByRole("button", { name: RECTIFICAR })).toBeDefined();
+    expect(screen.getByRole("button", { name: RATIFICAR })).toBeDefined();
+  });
+
+  it("sin propuesta: mismas descargas, y los antecedentes destacados", async () => {
+    await pintar(SIN_PROPUESTA);
+
+    expect(screen.getByRole("link", { name: ANTECEDENTES })).toBeDefined();
+    expect(screen.queryByRole("button", { name: DESCARGA_BORRADOR })).toBeNull();
+    expect(screen.queryByRole("link", { name: DESCARGA_BORRADOR })).toBeNull();
+    expect(screen.getByRole("button", { name: RATIFICAR })).toBeDefined();
+    expect(screen.getByRole("button", { name: RECTIFICAR })).toBeDefined();
+  });
+
+  it("ratificado: aparece la descarga del informe firmado, y sigue sin haber borrador", async () => {
+    const firmado = {
+      ...informe({ canRequestChanges: false, canApprove: false, canDownloadSigned: true }),
+      workflowStatus: "SIGNED",
+      finalArtifact: { downloadUrl: "/api/v1/reports/x/signed-document?format=docx" },
+    };
+    vi.stubGlobal("fetch", fetchDevolviendo(firmado));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    const enlace = screen.getByRole("link", { name: DESCARGA_FIRMADO }) as HTMLAnchorElement;
+    expect(enlace.getAttribute("href")).toContain("/signed-document");
+    expect(screen.queryByRole("button", { name: DESCARGA_BORRADOR })).toBeNull();
+    expect(screen.queryByRole("link", { name: DESCARGA_BORRADOR })).toBeNull();
+    // Los antecedentes siguen a mano, y sin destacar: no hay nada que resolver.
+    const antecedentes = screen.getByRole("link", { name: ANTECEDENTES });
+    expect(antecedentes).toBeDefined();
+    expect(antecedentes.className).not.toContain("font-semibold");
+  });
+
+  it("con el artefacto presente pero sin la capacidad, NO se ofrece la descarga", async () => {
+    // La autoridad es el backend: `canDownloadSigned` es la misma capacidad que
+    // autoriza la descarga en el servidor, y un artefacto suelto no la sustituye.
+    const raro = {
+      ...informe({ canRequestChanges: false, canApprove: false, canDownloadSigned: false }),
+      finalArtifact: { downloadUrl: "/api/v1/reports/x/signed-document?format=docx" },
+    };
+    vi.stubGlobal("fetch", fetchDevolviendo(raro));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    expect(screen.queryByRole("link", { name: DESCARGA_FIRMADO })).toBeNull();
+  });
+
+  it("el enlace de antecedentes sigue saliendo de sourceDocument.downloadUrl", async () => {
+    await pintar({ canRequestChanges: true, canApprove: true });
+    const enlace = screen.getByRole("link", { name: ANTECEDENTES }) as HTMLAnchorElement;
+
+    expect(enlace.getAttribute("href")).toBe(
+      "/api/v1/cases/00000000-0000-4000-8000-0000000000ca/source-document",
+    );
+  });
+});

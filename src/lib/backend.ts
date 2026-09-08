@@ -18,6 +18,45 @@ export type CaseStatus =
 export type Orientation = "RECOVERABLE" | "IRRECOVERABLE" | "INDETERMINATE";
 export type ExportStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED" | "EXPIRED";
 
+/**
+ * EL DOCUMENTO ENTREGABLE del informe, tal como lo compone el backend con
+ * `buildClientReport` — la MISMA proyección que imprime el .docx firmado.
+ *
+ * Es lo ÚNICO que se muestra en la ficha del médico. NO se usa `sections`, que
+ * es el volcado interno del snapshot y lleva dentro los códigos de razón, los
+ * estados de política y los guardarraíles que necesitan la administración y la
+ * auditoría. Mientras la pantalla lo pintó, el médico llegó a leer «Criterio de
+ * período: Confirmado por el cliente» y «[REC-1] Tratamiento activo».
+ *
+ * Estos tipos vivían junto al generador de PDF del navegador. Ese generador se
+ * retiró —el informe se lee en pantalla y el documento que se descarga es el
+ * firmado, que emite el backend—, y los tipos se quedan aquí, con el resto del
+ * espejo de la API, que es su sitio.
+ */
+export interface CampoDocumento {
+  label: string;
+  value: string;
+}
+export interface SeccionDocumento {
+  id: string;
+  title: string;
+  fields: CampoDocumento[];
+  paragraphs: string[];
+}
+export interface DocumentoInforme {
+  documentKind: "PRE_REPORT" | "FINAL_SIGNED";
+  branding: {
+    documentTitle: string;
+    institutionalHeading: string;
+    institutionalSubheading: string;
+    footerText: string;
+  };
+  caseReference: string;
+  sections: SeccionDocumento[];
+  proposal: { options: { label: string; checked: boolean }[]; note: string | null };
+  draftNotice: string | null;
+}
+
 export interface Batch {
   id: string;
   name: string;

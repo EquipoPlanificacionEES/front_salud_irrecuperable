@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import { type ReportWorkflowStatus } from "@/lib/backend";
-import { descargarInformePdf, type DocumentoInforme } from "@/lib/informe-pdf";
+import { type DocumentoInforme, type ReportWorkflowStatus } from "@/lib/backend";
 import {
   censarLicencias,
   diasLicencia,
@@ -56,7 +55,7 @@ interface Report {
   createdAt: string;
   workflowStatus: ReportWorkflowStatus;
   // El documento entregable, ya compuesto por el backend. Es lo ÚNICO que se
-  // muestra, se imprime o se descarga. Ver src/lib/informe-pdf.ts.
+  // muestra. Ver `DocumentoInforme` en src/lib/backend.ts.
   document: DocumentoInforme;
   proposal: { recoverableChecked: boolean; irrecoverableChecked: boolean; unresolvedNote: string | null };
   readiness: { status: "READY" | "NOT_READY"; blockers: { code: string; statement: string }[] };
@@ -85,7 +84,12 @@ interface Report {
    */
   sourceDocument: { downloadUrl: string } | null;
   reviews: Review[];
-  draftArtifact: { downloadUrl: string } | null;
+  /**
+   * El informe FIRMADO. `draftArtifact` sigue existiendo en la respuesta —el
+   * backend lo conserva para operaciones y auditoría— pero esta pantalla no lo
+   * declara: el preinforme se lee aquí mismo, y un tipo que no lo conoce no lo
+   * puede volver a ofrecer por descuido.
+   */
   finalArtifact: { downloadUrl: string } | null;
   /**
    * `canApprove` — este informe se ratifica tal como está.
@@ -98,6 +102,8 @@ interface Report {
     canApprove: boolean;
     canResolveAndApprove: boolean;
     hasActiveSignature: boolean;
+    /** El documento final está emitido y esta sesión puede descargarlo. */
+    canDownloadSigned: boolean;
   };
   licenses: LicenciaBackend[];
 }
@@ -363,6 +369,11 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           </div>
           <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
         </div>
+        {/* DOS ACCIONES, Y NINGUNA DEL BORRADOR.
+            El preinforme se lee AQUÍ ABAJO, entero: ofrecer además descargarlo
+            era ofrecer lo mismo dos veces, y en dos formatos que no son el
+            documento del expediente. Lo que sí se descarga es el informe
+            FIRMADO, que es el que sale de la institución. */}
         <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--atm-linea)] pt-3">
           {/* LOS ANTECEDENTES, para todos los expedientes y en todos los
               estados. Es el expediente original tal como llegó: el médico que
@@ -382,24 +393,16 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               Ver antecedentes
             </a>
           )}
-          <button
-            onClick={() => void descargarInformePdf(rep)}
-            className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
-          >
-            Descargar PDF
-          </button>
-            {rep.draftArtifact && (
-              <a href={`/api/v1${rep.draftArtifact.downloadUrl.replace(/^\/api\/v1/, "")}`} target="_blank" rel="noreferrer"
-                 className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50">
-                Descargar preinforme (.docx)
-              </a>
-            )}
-            {rep.finalArtifact && (
-              <a href={`/api/v1${rep.finalArtifact.downloadUrl.replace(/^\/api\/v1/, "")}`} target="_blank" rel="noreferrer"
-                 className="rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-medium text-[var(--atm-ok)] hover:bg-green-100">
-                Descargar informe firmado (.docx)
-              </a>
-            )}
+          {/* EL INFORME FIRMADO. Quién puede descargarlo lo dice el backend con
+              `canDownloadSigned`, no la mera existencia de un artefacto: es la
+              misma capacidad que autoriza la descarga en el servidor. La URL la
+              trae el artefacto, que es quien la conoce. */}
+          {cap.canDownloadSigned && rep.finalArtifact && (
+            <a href={`/api/v1${rep.finalArtifact.downloadUrl.replace(/^\/api\/v1/, "")}`} target="_blank" rel="noreferrer"
+               className="rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-medium text-[var(--atm-ok)] hover:bg-green-100">
+              Descargar informe firmado (.docx)
+            </a>
+          )}
         </div>
       </div>
 
