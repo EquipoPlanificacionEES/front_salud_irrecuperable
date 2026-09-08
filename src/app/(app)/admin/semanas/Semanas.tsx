@@ -84,9 +84,9 @@ export function Semanas() {
 
       {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
 
-      <Tabla columnas={["Semana", "Estado", "Origen", "Casos", "Sin asignar", "En revisión", "Firmados", ""]}>
-        {cargando && <FilaVacia cols={8}>Cargando…</FilaVacia>}
-        {!cargando && items.length === 0 && <FilaVacia cols={8}>Sin semanas. Crea la primera.</FilaVacia>}
+      <Tabla columnas={["Semana", "Estado", "Origen", "Casos", "Sin asignar", "Por revisar", "Retenidos", "Firmados", ""]}>
+        {cargando && <FilaVacia cols={9}>Cargando…</FilaVacia>}
+        {!cargando && items.length === 0 && <FilaVacia cols={9}>Sin semanas. Crea la primera.</FilaVacia>}
         {items.map(({ batch, summary }) => (
           <tr key={batch.id} className="border-t border-[var(--atm-linea)] hover:bg-[var(--atm-fondo)]">
             <td className="px-4 py-2.5 font-medium text-zinc-800">{batch.name}</td>
@@ -96,8 +96,9 @@ export function Semanas() {
             <td className="px-4 py-2.5 text-zinc-500">{batch.source === "MANUAL" ? "Manual" : "Bot"}</td>
             <td className="px-4 py-2.5 text-zinc-600">{summary.totalCases}</td>
             <td className="px-4 py-2.5 text-zinc-600">{summary.unassignedCases}</td>
-            <td className="px-4 py-2.5 text-zinc-600">{summary.readyForReview + summary.changesRequested}</td>
-            <td className="px-4 py-2.5 text-zinc-600">{summary.signed}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{summary.classification.PENDING_REVIEW}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{summary.classification.HOLD || "—"}</td>
+            <td className="px-4 py-2.5 text-zinc-600">{summary.classification.SIGNED}</td>
             <td className="px-4 py-2.5 text-right whitespace-nowrap">
               <Link
                 href={`/admin/asignaciones?semana=${batch.id}`}

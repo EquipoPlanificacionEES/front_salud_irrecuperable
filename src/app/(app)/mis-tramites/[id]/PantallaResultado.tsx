@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import { type DocumentoInforme, type ReportWorkflowStatus } from "@/lib/backend";
+import {
+  type DocumentoInforme,
+  type ManualForm,
+  type OperationalCase,
+  type ReportWorkflowStatus,
+} from "@/lib/backend";
 import {
   censarLicencias,
   diasLicencia,
@@ -149,12 +154,84 @@ const TONO: Record<string, string> = {
   mal: "border-red-300 bg-red-50 text-[var(--atm-mal)]",
 };
 
-const EDITABLES = new Set(["IV", "V"]);
+/**
+ * LAS SECCIONES QUE EL MÉDICO PUEDE TOCAR.
+ *
+ * La I —identificación— NUNCA: quién es la persona no es materia de criterio
+ * clínico, y abrirla convierte un error de lectura en el expediente de otra
+ * persona. La II se completa con lo que el sistema no pudo establecer; la III y
+ * la IV se escriben; la V se elige.
+ */
+const EDITABLES = new Set(["II", "III", "IV", "V"]);
 
 const fecha = (s: string) => new Date(s).toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" });
 
+/**
+ * Busca el caso en la bandeja del propio médico. Es el único listado que le
+ * pertenece, así que no revela nada que no fuera ya suyo.
+ */
+async function buscarEnBandeja(caseId: string): Promise<OperationalCase | null> {
+  try {
+    const { cases } = await api<{ cases: OperationalCase[] }>("/inbox");
+    return cases.find((c) => c.caseId === caseId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * LA FICHA DE UN EXPEDIENTE SIN INFORME.
+ *
+ * No inventa un preinforme ni finge una ficha clínica: dice lo poco que se sabe
+ * —cuál es el trámite, que está retenido, y por qué no se puede actuar— y
+ * ofrece lo único accionable, que son los antecedentes originales.
+ *
+ * Sin banners sobre lo que el sistema no pudo hacer: el motivo administrativo lo
+ * redacta el backend y es lo que se muestra.
+ */
+function VistaMinima({ caso }: { caso: OperationalCase }) {
+  const retenido = caso.classification === "HOLD";
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[var(--atm-linea)] bg-white px-5 py-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-900">Trámite {caso.externalCaseId}</h3>
+            <p className="mt-0.5 text-xs text-zinc-500">Este expediente todavía no tiene informe.</p>
+          </div>
+          {retenido && (
+            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-[var(--atm-obs)]">
+              Retenido
+            </span>
+          )}
+        </div>
+        {caso.sourceDocument && (
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--atm-linea)] pt-3">
+            <a
+              href={`/api/v1${caso.sourceDocument.downloadUrl.replace(/^\/api\/v1/, "")}`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--atm-azul2)] focus-visible:ring-offset-2"
+            >
+              Ver antecedentes
+            </a>
+          </div>
+        )}
+      </div>
+
+      {caso.hold && (
+        <p className={`rounded-lg border px-4 py-3 text-sm font-medium ${TONO.obs}`}>
+          {caso.hold.statement}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function PantallaResultado({ caseId }: { caseId: string }) {
   const [rep, setRep] = useState<Report | null>(null);
+  /** El caso tal como lo ve su bandeja, cuando no hay informe que mostrar. */
+  const [minima, setMinima] = useState<OperationalCase | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modo, setModo] = useState<"ver" | "modificar" | "resolver">("ver");
   const [conclusion, setConclusion] = useState("");
@@ -165,6 +242,15 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    */
   const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
   const [nota, setNota] = useState("");
+  /**
+   * EL FORMULARIO LO DESCRIBE EL BACKEND. Qué cifras se ofrecen y cuáles no
+   * pudo establecer el sistema sale de `/manual-form`, no de una lista escrita
+   * aquí: el informe y el formulario tienen que hablar de los mismos campos.
+   */
+  const [form, setForm] = useState<ManualForm | null>(null);
+  /** Sección III, y las cifras de la II que el médico complete. */
+  const [analisis, setAnalisis] = useState("");
+  const [cifras, setCifras] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -178,6 +264,25 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       setRep(r);
       return r;
     } catch (e) {
+      /**
+       * UN EXPEDIENTE PUEDE NO TENER INFORME Y AUN ASÍ SER SUYO.
+       *
+       * Dos de los retenidos en producción fallaron el análisis y no tienen
+       * ningún `ReportSnapshot`: pedir su informe responde 404. Antes eso era
+       * una pantalla de error, y como además no aparecían en la bandeja, el
+       * médico no tenía forma de saber que existían.
+       *
+       * Se pregunta entonces a su propia bandeja —el único listado que le
+       * pertenece— para poder decirle lo que sí se sabe: que está retenido y
+       * por qué no puede hacer nada. Ver `vistaMinima`.
+       */
+      if (e instanceof ApiFallo && e.status === 404) {
+        const suyo = await buscarEnBandeja(caseId);
+        if (suyo) {
+          setMinima(suyo);
+          return null;
+        }
+      }
       setError(
         e instanceof ApiFallo
           ? e.status === 404
@@ -200,8 +305,22 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * la V— y por eso comparten pantalla: lo que cambia es qué hace el botón de
    * confirmar, no lo que el médico rellena.
    */
-  function abrirFormulario(destino: "modificar" | "resolver") {
+  async function abrirFormulario(destino: "modificar" | "resolver") {
     if (!rep) return;
+    // Se pide el formulario ANTES de abrirlo: sin él no se sabe qué cifras
+    // ofrecer ni cuáles el sistema no pudo establecer.
+    try {
+      const f = await api<ManualForm>(`/reports/${rep.id}/manual-form`);
+      setForm(f);
+      setAnalisis(f.sections.find((s) => s.id === "III")?.fields[0]?.value ?? "");
+      setCifras(
+        Object.fromEntries(
+          (f.sections.find((s) => s.id === "II")?.fields ?? []).map((c) => [c.key, c.value]),
+        ),
+      );
+    } catch {
+      setForm(null);
+    }
     // El punto de partida es la conclusión TAL COMO SE ENTREGA, no el volcado
     // interno: el médico reescribe lo que va a firmar.
     setConclusion((rep.document.sections.find((s) => s.id === "IV")?.paragraphs ?? []).join("\n\n"));
@@ -242,11 +361,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
         {
           json: {
             comments: "El profesional no coincide con la propuesta y la corrigió.",
-            correction: {
-              assessment: evaluacion,
-              conclusion: conclusion.trim(),
-              ...(nota.trim() ? { note: nota.trim() } : {}),
-            },
+            correction: cuerpoFormulario(),
           },
         },
       );
@@ -275,6 +390,34 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * de escribir: el servidor crea con ellas la versión siguiente y firma ESA.
    * Nunca se aprueba un informe sin pronunciamiento.
    */
+  /**
+   * LO QUE SE ENVÍA, y es lo MISMO por las dos vías: corregir y resolver piden
+   * los mismos campos porque son el mismo informe. Sólo se mandan las cifras
+   * que el médico cambió — un campo intacto no es un cero, y escribirlo
+   * borraría lo que el sistema sí computó.
+   */
+  function cuerpoFormulario() {
+    const original = new Map(
+      (form?.sections.find((s) => s.id === "II")?.fields ?? []).map((c) => [c.key, c.value]),
+    );
+    const cambiadas = Object.entries(cifras).filter(
+      ([k, v]) => v.trim() !== "" && v.trim() !== (original.get(k) ?? ""),
+    );
+    const analisisOriginal = form?.sections.find((s) => s.id === "III")?.fields[0]?.value ?? "";
+
+    return {
+      assessment: evaluacion,
+      conclusion: conclusion.trim(),
+      ...(analisis.trim() && analisis.trim() !== analisisOriginal
+        ? { clinicalAnalysis: analisis.trim() }
+        : {}),
+      ...(cambiadas.length > 0
+        ? { figures: Object.fromEntries(cambiadas.map(([k, v]) => [k, Number(v)])) }
+        : {}),
+      ...(nota.trim() ? { note: nota.trim() } : {}),
+    };
+  }
+
   async function ratificar() {
     if (!rep) return;
     const resolviendo = modo === "resolver";
@@ -283,13 +426,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     setMsg(null);
     try {
       if (resolviendo) {
-        await api(`/reports/${rep.id}/resolve-and-approve`, {
-          json: {
-            assessment: evaluacion,
-            conclusion: conclusion.trim(),
-            ...(nota.trim() ? { note: nota.trim() } : {}),
-          },
-        });
+        await api(`/reports/${rep.id}/resolve-and-approve`, { json: cuerpoFormulario() });
         setModo("ver");
       } else {
         await api(`/reports/${rep.id}/approve`, { json: {} });
@@ -317,6 +454,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       </div>
     );
   }
+  if (minima) return <VistaMinima caso={minima} />;
   if (!rep) return <p className="text-sm text-zinc-400">Cargando…</p>;
 
   const cap = rep.capabilities;
@@ -421,9 +559,10 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       )}
       {editando && (
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO.info}`}>
-          {modo === "resolver" ? "Estás ratificando el informe." : "Estás modificando el informe."} Solo puedes
-          cambiar la <strong>Conclusión general (IV)</strong> y la{" "}
-          <strong>Propuesta de evaluación (V)</strong>; el resto queda tal como está.
+          {modo === "resolver" ? "Estás ratificando el informe." : "Estás modificando el informe."} Puedes
+          completar las <strong>cifras de licencias (II)</strong>, el{" "}
+          <strong>análisis clínico (III)</strong>, la <strong>Conclusión general (IV)</strong> y la{" "}
+          <strong>Propuesta de evaluación (V)</strong>. La identificación no se modifica.
         </p>
       )}
 
@@ -454,7 +593,35 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                 {bloqueada && <span className="shrink-0 text-[10px] uppercase tracking-wide text-zinc-400">Solo lectura</span>}
               </div>
 
-              {editando && s.id === "IV" ? (
+              {editando && s.id === "II" ? (
+                /* LAS CIFRAS QUE OFRECE EL BACKEND, ni una más. Las que el
+                   sistema no pudo establecer se señalan: es lo que hay que
+                   buscar en los antecedentes. */
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(form?.sections.find((x) => x.id === "II")?.fields ?? []).map((campo) => (
+                    <label key={campo.key} className="text-sm">
+                      <span className="text-zinc-600">{campo.label}</span>
+                      {!campo.systemDetermined && (
+                        <span className="ml-1 text-xs font-medium text-[var(--atm-obs)]">· por completar</span>
+                      )}
+                      <input
+                        type="number"
+                        min={0}
+                        className={`${inputBase} mt-1`}
+                        value={cifras[campo.key] ?? ""}
+                        onChange={(e) => setCifras((c) => ({ ...c, [campo.key]: e.target.value }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : editando && s.id === "III" ? (
+                <textarea
+                  className={`${inputBase} min-h-[120px]`}
+                  value={analisis}
+                  onChange={(e) => setAnalisis(e.target.value)}
+                  placeholder="Análisis de los antecedentes clínicos"
+                />
+              ) : editando && s.id === "IV" ? (
                 <textarea
                   className={`${inputBase} min-h-[130px]`}
                   value={conclusion}

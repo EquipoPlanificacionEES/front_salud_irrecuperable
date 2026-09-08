@@ -140,15 +140,18 @@ export function Asignaciones() {
             columnas={[
               "Médico",
               "SIS",
-              "Carga actual",
+              // «Asignados» y no «carga actual»: cuenta TODOS sus expedientes,
+              // firmados incluidos, que es lo que hace falta saber para repartir.
+              "Asignados",
               "Por revisar",
+              "Retenidos",
               "Asignar",
               ...(preview ? ["Quedaría con"] : []),
             ]}
           >
             {ctx.doctors.length === 0 && (
               <tr>
-                <td colSpan={preview ? 6 : 5} className="px-4 py-10 text-center text-zinc-400">
+                <td colSpan={preview ? 7 : 6} className="px-4 py-10 text-center text-zinc-400">
                   No hay médicos en el contrato.
                 </td>
               </tr>
@@ -163,8 +166,9 @@ export function Asignaciones() {
                   {!d.assignable && " (inactivo)"}
                 </td>
                 <td className="px-4 py-2.5 text-zinc-500">{d.professionalCode ?? "—"}</td>
-                <td className="px-4 py-2.5 text-zinc-600">{d.currentLoad}</td>
-                <td className="px-4 py-2.5 text-zinc-600">{d.pendingReview}</td>
+                <td className="px-4 py-2.5 text-zinc-600">{d.assignedCases}</td>
+                <td className="px-4 py-2.5 text-zinc-600">{d.classification.PENDING_REVIEW}</td>
+                <td className="px-4 py-2.5 text-zinc-600">{d.classification.HOLD || "—"}</td>
                 <td className="px-4 py-2.5">
                   <input
                     type="number"
@@ -189,7 +193,7 @@ export function Asignaciones() {
                 </td>
                 {preview && (
                   <td className="px-4 py-2.5 font-medium text-zinc-700">
-                    {proyeccion(d.doctorProfileId)?.projectedLoad ?? d.currentLoad}
+                    {proyeccion(d.doctorProfileId)?.projectedLoad ?? d.assignedCases}
                   </td>
                 )}
               </tr>

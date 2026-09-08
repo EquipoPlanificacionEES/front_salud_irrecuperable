@@ -69,24 +69,49 @@ export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: 
   // ---- Admin / Calidad --------------------------------------------------
   if (!batches) return <p className="text-sm text-zinc-400">Cargando…</p>;
 
+  /**
+   * LAS CIFRAS SALEN DE LA CLASIFICACIÓN, y por eso cuadran entre sí: las ocho
+   * categorías son excluyentes y su suma es el total. Antes «en revisión» sumaba
+   * dos estados del informe sin mirar la retención, y contaba un expediente que
+   * el médico no veía en su bandeja.
+   */
   const tot = batches.reduce(
     (a, { summary }) => ({
       casos: a.casos + summary.totalCases,
-      sinAsignar: a.sinAsignar + summary.unassignedCases,
-      revision: a.revision + summary.readyForReview + summary.changesRequested,
-      firmados: a.firmados + summary.signed,
+      sinAsignar: a.sinAsignar + summary.classification.UNASSIGNED,
+      porRevisar: a.porRevisar + summary.classification.PENDING_REVIEW,
+      retenidos: a.retenidos + summary.classification.HOLD,
+      firmados: a.firmados + summary.classification.SIGNED,
+      // Categorías que normalmente valen cero. Se muestran SÓLO si no lo valen:
+      // esconderlas fue lo que dejó expedientes fuera de todas las cuentas.
+      enFirma: a.enFirma + summary.classification.SIGNING,
+      falloFirma: a.falloFirma + summary.classification.SIGNING_FAILED,
+      sinInforme: a.sinInforme + summary.classification.NO_REPORT,
+      sinClasificar: a.sinClasificar + summary.classification.UNCLASSIFIED,
     }),
-    { casos: 0, sinAsignar: 0, revision: 0, firmados: 0 },
+    {
+      casos: 0, sinAsignar: 0, porRevisar: 0, retenidos: 0, firmados: 0,
+      enFirma: 0, falloFirma: 0, sinInforme: 0, sinClasificar: 0,
+    },
   );
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Kpi label="Casos" valor={tot.casos} />
         <Kpi label="Sin asignar" valor={tot.sinAsignar} />
-        <Kpi label="En revisión" valor={tot.revision} />
+        <Kpi label="Por revisar" valor={tot.porRevisar} />
+        <Kpi label="Retenidos" valor={tot.retenidos} />
         <Kpi label="Firmados" valor={tot.firmados} />
       </div>
+      {(tot.enFirma > 0 || tot.falloFirma > 0 || tot.sinInforme > 0 || tot.sinClasificar > 0) && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {tot.enFirma > 0 && <Kpi label="En firma" valor={tot.enFirma} />}
+          {tot.falloFirma > 0 && <Kpi label="Error de firma" valor={tot.falloFirma} />}
+          {tot.sinInforme > 0 && <Kpi label="Sin informe" valor={tot.sinInforme} />}
+          {tot.sinClasificar > 0 && <Kpi label="Sin clasificar" valor={tot.sinClasificar} />}
+        </div>
+      )}
 
       <div>
         <h3 className="mb-2 text-sm font-semibold text-zinc-700">Semanas</h3>
@@ -111,7 +136,7 @@ export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: 
                   <td className="px-4 py-2 text-zinc-500">{batch.status === "OPEN" ? "abierta" : "cerrada"}</td>
                   <td className="px-4 py-2 text-zinc-600">{summary.totalCases}</td>
                   <td className="px-4 py-2 text-zinc-600">{summary.unassignedCases}</td>
-                  <td className="px-4 py-2 text-zinc-600">{summary.signed}</td>
+                  <td className="px-4 py-2 text-zinc-600">{summary.classification.SIGNED}</td>
                 </tr>
               ))}
             </tbody>
@@ -127,22 +152,24 @@ export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: 
               <tr className="bg-[var(--atm-th)] text-left text-white">
                 <th className="px-4 py-2 font-medium">Médico</th>
                 <th className="px-4 py-2 font-medium">SIS</th>
-                <th className="px-4 py-2 font-medium">Carga</th>
+                <th className="px-4 py-2 font-medium">Asignados</th>
                 <th className="px-4 py-2 font-medium">Por revisar</th>
+                <th className="px-4 py-2 font-medium">Retenidos</th>
                 <th className="px-4 py-2 font-medium">Firmados</th>
               </tr>
             </thead>
             <tbody>
               {medicos.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-6 text-center text-zinc-400">Sin médicos.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-zinc-400">Sin médicos.</td></tr>
               )}
               {medicos.map((m) => (
                 <tr key={m.doctorProfileId} className="border-t border-[var(--atm-linea)]">
                   <td className="px-4 py-2">{m.fullName}{!m.assignable && " (inactivo)"}</td>
                   <td className="px-4 py-2 text-zinc-500">{m.professionalCode ?? "—"}</td>
-                  <td className="px-4 py-2 text-zinc-600">{m.currentLoad}</td>
-                  <td className="px-4 py-2 text-zinc-600">{m.pendingReview}</td>
-                  <td className="px-4 py-2 text-zinc-600">{m.signed}</td>
+                  <td className="px-4 py-2 text-zinc-600">{m.assignedCases}</td>
+                  <td className="px-4 py-2 text-zinc-600">{m.classification.PENDING_REVIEW}</td>
+                  <td className="px-4 py-2 text-zinc-600">{m.classification.HOLD || "—"}</td>
+                  <td className="px-4 py-2 text-zinc-600">{m.classification.SIGNED}</td>
                 </tr>
               ))}
             </tbody>

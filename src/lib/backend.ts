@@ -16,6 +16,78 @@ export type CaseStatus =
   | "AWAITING_DOCUMENTS" | "NOT_EVALUABLE" | "REPORT_GENERATED"
   | "QUALITY_REVIEW" | "RETURNED_FOR_CORRECTION" | "APPROVED" | "DELIVERED";
 export type Orientation = "RECOVERABLE" | "IRRECOVERABLE" | "INDETERMINATE";
+
+/**
+ * LA CATEGORÍA OPERACIONAL DEL EXPEDIENTE. La decide el backend
+ * (`classifyCase`) y llega resuelta en cada caso.
+ *
+ * Aquí NO se recompone. Que cada pantalla se calculara la suya fue el defecto:
+ * la bandeja del médico sumaba 90 y el panel del administrador decía 93 sobre
+ * los mismos expedientes, y tres de ellos no aparecían en ninguna lista.
+ */
+export type CaseClassification =
+  | "SIGNED"
+  | "SIGNING_FAILED"
+  | "SIGNING"
+  | "HOLD"
+  | "UNASSIGNED"
+  | "NO_REPORT"
+  | "PENDING_REVIEW"
+  | "UNCLASSIFIED";
+
+export type CaseClassificationCounts = Record<CaseClassification, number>;
+
+/**
+ * EL FORMULARIO PARA COMPLETAR UN INFORME, tal como lo describe el backend.
+ *
+ * Qué se precarga, qué se puede editar, qué es obligatorio y qué NO pudo
+ * establecer el sistema lo decide el servidor desde el mismo modelo que imprime
+ * el documento. Aquí no se inventa ninguna regla: si vivieran en el navegador,
+ * la primera divergencia sería un campo que la pantalla da por opcional y el
+ * servidor rechaza.
+ */
+export interface ManualFormField {
+  key: string;
+  label: string;
+  kind: "TEXT" | "LONG_TEXT" | "INTEGER" | "CHOICE";
+  value: string;
+  editable: boolean;
+  required: boolean;
+  /** Falso = el sistema no lo pudo establecer; es lo que hay que completar. */
+  systemDetermined: boolean;
+  options?: { value: string; label: string }[];
+}
+
+export interface ManualForm {
+  reportSnapshotId: string;
+  version: number;
+  sections: { id: "I" | "II" | "III" | "IV" | "V"; title: string; fields: ManualFormField[] }[];
+}
+
+/** Retención activa, tal como la presenta el backend. */
+export interface CaseHold {
+  active: true;
+  statement: string;
+  /** Sólo llega a ADMIN y CALIDAD, que son quienes la resuelven. */
+  reason?: "DUPLICATE_SOURCE_DOCUMENT" | "SOURCE_IDENTITY_CONFLICT";
+}
+
+/**
+ * En qué pestaña de la bandeja cae cada categoría. Espejo de `inboxTabOf`
+ * (`@sir/domain`): las tres pestañas cubren todo lo asignado, sin huecos.
+ */
+export type PestañaBandeja = "pendientes" | "retenidos" | "historico";
+
+export const PESTAÑA_POR_CATEGORIA: Record<CaseClassification, PestañaBandeja | null> = {
+  PENDING_REVIEW: "pendientes",
+  NO_REPORT: "pendientes",
+  SIGNING: "pendientes",
+  SIGNING_FAILED: "pendientes",
+  UNCLASSIFIED: "pendientes",
+  HOLD: "retenidos",
+  SIGNED: "historico",
+  UNASSIGNED: null,
+};
 export type ExportStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED" | "EXPIRED";
 
 /**
@@ -70,15 +142,18 @@ export interface Batch {
 
 export interface BatchSummary {
   totalCases: number;
+  /**
+   * Sin asignación activa: el universo que una distribución puede repartir. NO
+   * es `classification.UNASSIGNED` — un expediente ya firmado cuya asignación
+   * se cerró cuenta aquí y allí es `SIGNED`, porque no hay nada que repartir.
+   */
   unassignedCases: number;
   assignedCases: number;
   processingCases: number;
   errorCases: number;
   casesWithoutReport: number;
-  readyForReview: number;
-  changesRequested: number;
-  approved: number;
-  signed: number;
+  /** Excluyente y exhaustivo: la suma de las ocho claves es `totalCases`. */
+  classification: CaseClassificationCounts;
 }
 
 export interface BatchListItem {
@@ -92,11 +167,14 @@ export interface DoctorWorkload {
   professionalCode: string | null;
   status: "ACTIVE" | "INACTIVE";
   assignable: boolean;
-  currentLoad: number;
-  casesWithoutReport: number;
-  pendingReview: number;
-  approved: number;
-  signed: number;
+  /**
+   * Expedientes con asignación activa, TODOS, firmados incluidos. Se llamaba
+   * «carga actual» y ese nombre decía otra cosa: un médico que terminó su
+   * semana entera seguía apareciendo con 93 de carga.
+   */
+  assignedCases: number;
+  /** El desglose. Su suma es `assignedCases`. */
+  classification: CaseClassificationCounts;
 }
 
 export interface AssignmentContext {
@@ -136,6 +214,16 @@ export interface AssignmentPreview {
 export interface OperationalCase {
   caseId: string;
   externalCaseId: string;
+  /** Ver `CaseClassification`. La resuelve el backend; aquí no se deduce. */
+  classification: CaseClassification;
+  /** Retención activa, o null. */
+  hold: CaseHold | null;
+  /**
+   * El expediente original, cuando existe. La URL la compone el backend. Es lo
+   * que permite ofrecer los antecedentes de un caso retenido SIN informe, que no
+   * tiene ninguna otra vía para hacerlo.
+   */
+  sourceDocument: { downloadUrl: string } | null;
   status: CaseStatus;
   statusChangedAt: string;
   discoveredAt: string;

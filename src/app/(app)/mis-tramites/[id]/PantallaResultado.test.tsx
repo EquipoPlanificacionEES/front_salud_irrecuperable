@@ -142,11 +142,68 @@ function informe(
   };
 }
 
+/**
+ * EL FORMULARIO LO DESCRIBE EL BACKEND, así que las pruebas lo sirven en vez de
+ * inventarlo: es el mismo contrato que consume la pantalla en producción.
+ */
+const FORMULARIO = {
+  reportSnapshotId: "00000000-0000-4000-8000-000000000001",
+  version: 1,
+  sections: [
+    {
+      id: "I",
+      title: "I. IDENTIFICACIÓN DEL USUARIO",
+      fields: [
+        { key: "Nombre", label: "Nombre", kind: "TEXT", value: "PERSONA DE PRUEBA",
+          editable: false, required: false, systemDetermined: true },
+      ],
+    },
+    {
+      id: "II",
+      title: "II. ANTECEDENTES Y REVISIÓN DE LICENCIAS MÉDICAS",
+      fields: [
+        { key: "authorizedLicenseCount", label: "Total licencias autorizadas", kind: "INTEGER",
+          value: "0", editable: true, required: false, systemDetermined: false },
+        { key: "authorizedDaysKnown", label: "Total días autorizados", kind: "INTEGER",
+          value: "0", editable: true, required: false, systemDetermined: false },
+      ],
+    },
+    {
+      id: "III",
+      title: "III. ANÁLISIS DE ANTECEDENTES CLÍNICOS",
+      fields: [
+        { key: "clinicalAnalysis", label: "Análisis de antecedentes clínicos", kind: "LONG_TEXT",
+          value: "", editable: true, required: false, systemDetermined: false },
+      ],
+    },
+    {
+      id: "IV",
+      title: "IV. CONCLUSIÓN GENERAL",
+      fields: [
+        { key: "conclusion", label: "Conclusión general", kind: "LONG_TEXT",
+          value: "", editable: true, required: true, systemDetermined: false },
+      ],
+    },
+    {
+      id: "V",
+      title: "V. PROPUESTA DE EVALUACIÓN DE SALUD",
+      fields: [
+        { key: "assessment", label: "Evaluación", kind: "CHOICE", value: "",
+          editable: true, required: true, systemDetermined: false,
+          options: [
+            { value: "RECOVERABLE", label: "SALUD RECUPERABLE" },
+            { value: "IRRECOVERABLE", label: "SALUD IRRECUPERABLE" },
+          ] },
+      ],
+    },
+  ],
+};
+
+const json = (cuerpo: unknown) =>
+  new Response(JSON.stringify(cuerpo), { status: 200, headers: { "content-type": "application/json" } });
+
 const fetchDevolviendo = (cuerpo: unknown) =>
-  vi.fn(async () => new Response(JSON.stringify(cuerpo), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  }));
+  vi.fn(async (url: string) => json(String(url).includes("/manual-form") ? FORMULARIO : cuerpo));
 
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchDevolviendo(informe({ canRequestChanges: true, canApprove: false })));
@@ -168,6 +225,23 @@ async function pintar(
 }
 
 const PUEDE_ACTUAR = { canRequestChanges: true, canApprove: false };
+
+/**
+ * Abre el editor y ESPERA. El formulario lo describe el backend, así que
+ * abrirlo es una llamada: sin esperarla, la prueba mira una pantalla que
+ * todavía no existe.
+ */
+/** La llamada a un endpoint concreto, buscada por URL y no por su posición. */
+function llamadaA(mock: { mock: { calls: unknown[][] } }, fragmento: string) {
+  const call = mock.mock.calls.find((c) => String(c[0]).includes(fragmento));
+  if (!call) throw new Error(`no se registró ninguna llamada a ${fragmento}`);
+  return { url: String(call[0]), init: call[1] as { body: string } };
+}
+
+async function abrirEditor(nombre: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: nombre }));
+  await waitFor(() => expect(screen.getByPlaceholderText(/Redacta la conclusión general/)).toBeDefined());
+}
 
 describe("PantallaResultado · acción de rectificar", () => {
   it("A · canRequestChanges sin canApprove: rectificar visible, ratificar no disponible", async () => {
@@ -484,7 +558,7 @@ describe("PantallaResultado · corrección estructurada", () => {
     render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: RECTIFICAR }));
+    await abrirEditor(RECTIFICAR);
     fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
@@ -493,10 +567,8 @@ describe("PantallaResultado · corrección estructurada", () => {
     fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
     fireEvent.click(screen.getByRole("button", { name: /guardar corrección/i }));
 
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
-    const envio = fetchMock.mock.calls[1]?.[1] as { body: string } | undefined;
-    if (!envio) throw new Error("no se registró la llamada de corrección");
-    const cuerpo = JSON.parse(envio.body) as {
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
+    const cuerpo = JSON.parse(llamadaA(fetchMock, "/reviews").init.body) as {
       comments: string;
       correction: { assessment: string; conclusion: string };
     };
@@ -509,11 +581,16 @@ describe("PantallaResultado · corrección estructurada", () => {
 
   it("después de guardar muestra la versión nueva, y no invita a ratificar la vieja", async () => {
     const cola = respuestas();
-    vi.stubGlobal("fetch", vi.fn(async () => cola.shift() as Response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        String(url).includes("/manual-form") ? json(FORMULARIO) : (cola.shift() as Response),
+      ),
+    );
     render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: RECTIFICAR }));
+    await abrirEditor(RECTIFICAR);
     fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
@@ -602,11 +679,11 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
     const llamadasIniciales = fetchMock.mock.calls.length;
 
-    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    await abrirEditor(RATIFICAR);
 
-    // No se ha mandado nada todavía: primero se decide.
-    expect(fetchMock.mock.calls.length).toBe(llamadasIniciales);
-    expect(screen.getByPlaceholderText(/Redacta la conclusión general/)).toBeDefined();
+    // Sólo se pidió el formulario: no se ha mandado ninguna decisión.
+    expect(fetchMock.mock.calls.length).toBe(llamadasIniciales + 1);
+    expect(String(fetchMock.mock.calls[llamadasIniciales]?.[0])).toContain("/manual-form");
     expect(screen.getAllByRole("radio")).toHaveLength(2);
   });
 
@@ -615,7 +692,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    await abrirEditor(RATIFICAR);
     fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
@@ -631,7 +708,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    await abrirEditor(RATIFICAR);
     fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
     fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
       target: { value: "   " },
@@ -647,7 +724,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    await abrirEditor(RATIFICAR);
     fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
@@ -655,10 +732,8 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
     fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
 
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
-    const llamada = fetchMock.mock.calls[1] as unknown as [string, { body: string }];
-    const [url, init] = llamada;
-    expect(url).toContain("/resolve-and-approve");
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
+    const { url, init } = llamadaA(fetchMock, "/resolve-and-approve");
     // NO se aprueba el informe sin pronunciamiento.
     expect(url).not.toMatch(/\/approve$/);
     const cuerpo = JSON.parse(init.body) as { assessment: string; conclusion: string };
@@ -795,5 +870,210 @@ describe("PantallaResultado · descargas", () => {
     expect(enlace.getAttribute("href")).toBe(
       "/api/v1/cases/00000000-0000-4000-8000-0000000000ca/source-document",
     );
+  });
+});
+
+
+/**
+ * EL EXPEDIENTE RETENIDO QUE NO TIENE INFORME.
+ *
+ * Dos de los tres retenidos en producción fallaron el análisis y no tienen
+ * ningún `ReportSnapshot`: pedir su informe responde 404. Antes eso era una
+ * pantalla de error y, como además no aparecían en la bandeja, el médico no
+ * tenía forma de saber que existían.
+ */
+describe("PantallaResultado · retenido sin informe", () => {
+  const CASE_ID = "00000000-0000-4000-8000-0000000000ca";
+
+  /** El informe responde 404 y la bandeja sí conoce el caso. */
+  function backend(caso: Record<string, unknown> | null) {
+    return vi.fn(async (url: string) => {
+      if (url.includes("/report")) {
+        return new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "no" } }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ cases: caso ? [caso] : [], total: caso ? 1 : 0 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+  }
+
+  const RETENIDO = {
+    caseId: CASE_ID,
+    externalCaseId: "33313853",
+    classification: "HOLD",
+    hold: {
+      active: true,
+      statement: "Este caso se encuentra temporalmente retenido para revisión administrativa.",
+    },
+    sourceDocument: { downloadUrl: `/api/v1/cases/${CASE_ID}/source-document` },
+    report: null,
+  };
+
+  it("muestra el trámite, el estado y el motivo, sin inventar una ficha clínica", async () => {
+    vi.stubGlobal("fetch", backend(RETENIDO));
+    render(<PantallaResultado caseId={CASE_ID} />);
+    await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
+
+    expect(screen.getByText("Retenido")).toBeDefined();
+    expect(screen.getByText(/retenido para revisión administrativa/i)).toBeDefined();
+    // Ni secciones, ni casillas, ni conclusión: no hay informe que mostrar.
+    expect(screen.queryByText(/CONCLUSIÓN GENERAL/i)).toBeNull();
+    expect(screen.queryByText(/PROPUESTA DE EVALUACIÓN/i)).toBeNull();
+  });
+
+  it("ofrece los antecedentes, que es lo único accionable", async () => {
+    vi.stubGlobal("fetch", backend(RETENIDO));
+    render(<PantallaResultado caseId={CASE_ID} />);
+    await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
+
+    const enlace = screen.getByRole("link", { name: /ver antecedentes/i }) as HTMLAnchorElement;
+    expect(enlace.getAttribute("href")).toContain("/source-document");
+    expect(enlace.getAttribute("target")).toBe("_blank");
+  });
+
+  it("no ofrece ninguna acción médica", async () => {
+    vi.stubGlobal("fetch", backend(RETENIDO));
+    render(<PantallaResultado caseId={CASE_ID} />);
+    await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
+
+    expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
+    expect(screen.queryByRole("button", { name: RECTIFICAR })).toBeNull();
+  });
+
+  it("no habla de la máquina ni de por qué no se pudo analizar", async () => {
+    vi.stubGlobal("fetch", backend(RETENIDO));
+    render(<PantallaResultado caseId={CASE_ID} />);
+    await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
+
+    for (const prohibido of [/\bIA\b/, /inteligencia artificial/i, /análisis fall/i, /error/i]) {
+      expect(screen.queryByText(prohibido), String(prohibido)).toBeNull();
+    }
+  });
+
+  it("si el caso NO es suyo, sigue siendo un error y no una ficha vacía", async () => {
+    vi.stubGlobal("fetch", backend(null));
+    render(<PantallaResultado caseId={CASE_ID} />);
+    await waitFor(() => expect(screen.getByText(/todavía no tiene preinforme/i)).toBeDefined());
+
+    expect(screen.queryByText(/Trámite/)).toBeNull();
+  });
+});
+
+
+/**
+ * EL FORMULARIO ESTRUCTURADO.
+ *
+ * No es un editor de Word ni una plantilla nueva: son los MISMOS campos que ya
+ * imprime el informe. El backend dice cuáles se ofrecen, cuáles no pudo
+ * establecer y cuáles son obligatorios; aquí no se inventa ninguna regla.
+ */
+describe("PantallaResultado · formulario estructurado", () => {
+  /** El informe con las cinco secciones, que es donde viven los editores. */
+  function conTodasLasSecciones(base: ReturnType<typeof informe>) {
+    return {
+      ...base,
+      proposal: { recoverableChecked: false, irrecoverableChecked: false, unresolvedNote: null },
+      document: {
+        ...base.document,
+        sections: [
+          { id: "I", title: "I. IDENTIFICACIÓN DEL USUARIO", fields: [], paragraphs: [] },
+          ...base.document.sections,
+          { id: "III", title: "III. ANÁLISIS DE ANTECEDENTES CLÍNICOS", fields: [], paragraphs: [] },
+          { id: "V", title: "V. PROPUESTA DE EVALUACIÓN DE SALUD", fields: [], paragraphs: [] },
+        ],
+      },
+    };
+  }
+
+  async function abrirFormulario(capacidades = SIN_PROPUESTA) {
+    const fetchMock = fetchDevolviendo(conTodasLasSecciones(informe(capacidades)));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+    await abrirEditor(RATIFICAR);
+    return fetchMock;
+  }
+
+  it("ofrece las cifras que manda el backend, y señala las que hay que completar", async () => {
+    await abrirFormulario();
+
+    expect(screen.getByText("Total licencias autorizadas")).toBeDefined();
+    expect(screen.getByText("Total días autorizados")).toBeDefined();
+    // Dos cifras que el sistema no pudo establecer → dos avisos.
+    expect(screen.getAllByText(/por completar/i)).toHaveLength(2);
+  });
+
+  it("la identificación no se puede editar desde el formulario", async () => {
+    await abrirFormulario();
+
+    // La Sección I se muestra en modo lectura, sin ningún control.
+    const seccion = screen.getByText(/I\. IDENTIFICACIÓN DEL USUARIO/).closest("section");
+    expect(seccion?.querySelector("input")).toBeNull();
+    expect(seccion?.querySelector("textarea")).toBeNull();
+  });
+
+  it("permite escribir el análisis clínico de la Sección III", async () => {
+    await abrirFormulario();
+
+    expect(screen.getByPlaceholderText(/Análisis de los antecedentes clínicos/)).toBeDefined();
+  });
+
+  it("manda sólo las cifras que el médico cambió", async () => {
+    const fetchMock = await abrirFormulario();
+
+    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+      target: { value: "Conclusión del profesional." },
+    });
+    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    // Sólo una de las dos cifras.
+    const dias = screen.getByText("Total días autorizados").closest("label")?.querySelector("input");
+    fireEvent.change(dias as HTMLElement, { target: { value: "764" } });
+    fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
+
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
+    const cuerpo = JSON.parse(llamadaA(fetchMock, "/resolve-and-approve").init.body) as {
+      figures?: Record<string, number>;
+      conclusion: string;
+      assessment: string;
+    };
+    // La que no tocó NO viaja: un campo intacto no es un cero.
+    expect(cuerpo.figures).toEqual({ authorizedDaysKnown: 764 });
+    expect(cuerpo.assessment).toBe("IRRECOVERABLE");
+    expect(cuerpo.conclusion).toBe("Conclusión del profesional.");
+  });
+
+  it("sin tocar ninguna cifra, no manda el bloque de cifras", async () => {
+    const fetchMock = await abrirFormulario();
+
+    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+      target: { value: "Conclusión del profesional." },
+    });
+    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
+
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
+    const cuerpo = JSON.parse(llamadaA(fetchMock, "/resolve-and-approve").init.body) as {
+      figures?: Record<string, number>;
+      clinicalAnalysis?: string;
+    };
+    expect(cuerpo.figures).toBeUndefined();
+    expect(cuerpo.clinicalAnalysis).toBeUndefined();
+  });
+
+  it("«Corregir» abre EL MISMO formulario: no hay dos", async () => {
+    const fetchMock = fetchDevolviendo(conTodasLasSecciones(informe(SIN_PROPUESTA)));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    await abrirEditor(RECTIFICAR);
+
+    expect(screen.getByText("Total licencias autorizadas")).toBeDefined();
+    expect(screen.getByPlaceholderText(/Análisis de los antecedentes clínicos/)).toBeDefined();
+    expect(screen.getAllByRole("radio")).toHaveLength(2);
   });
 });

@@ -83,8 +83,8 @@ export function Exportaciones() {
 
   const semanaElegida = semanas?.find((s) => s.batch.id === fBatch);
   const firmadosDisponibles = semanaElegida
-    ? semanaElegida.summary.signed
-    : (semanas ?? []).reduce((s, b) => s + b.summary.signed, 0);
+    ? semanaElegida.summary.classification.SIGNED
+    : (semanas ?? []).reduce((s, b) => s + b.summary.classification.SIGNED, 0);
   const nombreMedico = medicos.find((m) => m.doctorProfileId === fMedico)?.fullName;
   const alcance = [
     semanaElegida?.batch.name ?? "todas las semanas",
@@ -113,7 +113,7 @@ export function Exportaciones() {
               activa={fBatch === ""}
               titulo="Todas las semanas"
               subtitulo={`${semanas.reduce((s, b) => s + b.summary.totalCases, 0)} caso(s) en total`}
-              firmados={semanas.reduce((s, b) => s + b.summary.signed, 0)}
+              firmados={semanas.reduce((s, b) => s + b.summary.classification.SIGNED, 0)}
               onClick={() => setFBatch("")}
             />
             {semanas.map(({ batch, summary }) => (
@@ -122,7 +122,7 @@ export function Exportaciones() {
                 activa={fBatch === batch.id}
                 titulo={batch.name}
                 subtitulo={`${summary.totalCases} caso(s)`}
-                firmados={summary.signed}
+                firmados={summary.classification.SIGNED}
                 estado={batch.status}
                 onClick={() => setFBatch(batch.id)}
               />

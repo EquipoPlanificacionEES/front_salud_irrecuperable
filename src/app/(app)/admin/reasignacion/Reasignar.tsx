@@ -153,7 +153,7 @@ export function Reasignar() {
             <option value="">— elige un médico —</option>
             {medicos.map((m) => (
               <option key={m.doctorProfileId} value={m.doctorProfileId}>
-                {m.fullName} · {m.currentLoad} caso(s){!m.assignable ? " (inactivo)" : ""}
+                {m.fullName} · {m.assignedCases} caso(s){!m.assignable ? " (inactivo)" : ""}
               </option>
             ))}
           </Select>
@@ -165,10 +165,21 @@ export function Reasignar() {
       {med && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Carga actual" valor={med.currentLoad} />
-            <Stat label="Por revisar" valor={med.pendingReview} tono={med.pendingReview ? "obs" : "neutral"} />
-            <Stat label="Sin informe" valor={med.casesWithoutReport} />
-            <Stat label="Firmados" valor={med.signed} tono="ok" />
+            {/* «Asignados» y no «carga actual»: cuenta TODOS los expedientes
+                que tiene, firmados incluidos. El desglose de al lado es el que
+                dice cuánto trabajo le queda de verdad. */}
+            <Stat label="Asignados" valor={med.assignedCases} />
+            <Stat
+              label="Por revisar"
+              valor={med.classification.PENDING_REVIEW}
+              tono={med.classification.PENDING_REVIEW ? "obs" : "neutral"}
+            />
+            <Stat
+              label="Retenidos"
+              valor={med.classification.HOLD}
+              tono={med.classification.HOLD ? "obs" : "neutral"}
+            />
+            <Stat label="Firmados" valor={med.classification.SIGNED} tono="ok" />
           </div>
 
           {casos.length > 0 && (
@@ -180,7 +191,7 @@ export function Reasignar() {
                     <option value="">— médico de destino —</option>
                     {otros.map((m) => (
                       <option key={m.doctorProfileId} value={m.doctorProfileId}>
-                        {m.fullName} · {m.currentLoad} caso(s)
+                        {m.fullName} · {m.assignedCases} caso(s)
                       </option>
                     ))}
                   </Select>

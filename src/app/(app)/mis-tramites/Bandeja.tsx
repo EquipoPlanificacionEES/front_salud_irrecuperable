@@ -3,13 +3,23 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, ApiFallo } from "@/lib/api";
-import { ORIENTATION_LABEL, type OperationalCase, type ReportWorkflowStatus } from "@/lib/backend";
+import {
+  ORIENTATION_LABEL,
+  PESTAÑA_POR_CATEGORIA,
+  type OperationalCase,
+  type PestañaBandeja,
+  type ReportWorkflowStatus,
+} from "@/lib/backend";
 
 // GET /api/v1/inbox → los casos con asignación ACTIVA al médico que llama.
-
-type Pestaña = "pendientes" | "historico";
-
-const PENDIENTE = new Set<ReportWorkflowStatus>(["READY_FOR_REVIEW", "CHANGES_REQUESTED"]);
+//
+// TRES PESTAÑAS Y NINGÚN HUECO. Antes eran dos —pendientes e histórico— y el
+// backend retiraba de la lista los expedientes retenidos: la bandeja sumaba 90
+// y el panel del administrador decía 93, con tres casos que no aparecían en
+// ninguna parte. Ahora vienen todos, cada uno con su categoría ya resuelta, y
+// aquí sólo se reparten. La pestaña de cada categoría la decide
+// `PESTAÑA_POR_CATEGORIA`, espejo de la regla del dominio: no se deduce del
+// estado del informe ni de si hay retención.
 
 // 3 grupos visuales, igual que WORKFLOW_LABEL en lib/backend.ts.
 const CHIP: Record<ReportWorkflowStatus, { texto: string; clase: string }> = {
@@ -21,10 +31,12 @@ const CHIP: Record<ReportWorkflowStatus, { texto: string; clase: string }> = {
   SIGNING_FAILED: { texto: "Devuelto", clase: "bg-red-50 text-[var(--atm-mal)]" },
 };
 const SIN_INFORME = { texto: "En proceso", clase: "bg-zinc-100 text-zinc-500" };
+/** Un expediente retenido lo dice él, no su informe: puede no tener ninguno. */
+const RETENIDO = { texto: "Retenido", clase: "bg-amber-50 text-[var(--atm-obs)]" };
 
 export function Bandeja() {
   const [casos, setCasos] = useState<OperationalCase[]>([]);
-  const [tab, setTab] = useState<Pestaña>("pendientes");
+  const [tab, setTab] = useState<PestañaBandeja>("pendientes");
   const [buscar, setBuscar] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -36,24 +48,36 @@ export function Bandeja() {
       .finally(() => setCargando(false));
   }, []);
 
-  const esPendiente = (c: OperationalCase) => !c.report || PENDIENTE.has(c.report.workflowStatus);
+  const pestañaDe = (c: OperationalCase) => PESTAÑA_POR_CATEGORIA[c.classification];
 
   const filtrados = useMemo(() => {
     const q = buscar.trim().toLowerCase();
     return casos
-      .filter((c) => (tab === "pendientes" ? esPendiente(c) : !esPendiente(c)))
+      .filter((c) => pestañaDe(c) === tab)
       .filter((c) => !q || c.externalCaseId.toLowerCase().includes(q));
   }, [casos, tab, buscar]);
 
-  const nPend = casos.filter(esPendiente).length;
-  const nHist = casos.length - nPend;
-  const porRevisar = casos.filter((c) => c.report && PENDIENTE.has(c.report.workflowStatus)).length;
+  const cuantos = (p: PestañaBandeja) => casos.filter((c) => pestañaDe(c) === p).length;
+  const nPend = cuantos("pendientes");
+  const nRet = cuantos("retenidos");
+  const nHist = cuantos("historico");
+  // Los que ESPERAN SU PRONUNCIAMIENTO, que no es lo mismo que «pendientes»:
+  // ahí van también los que está firmando y los que fallaron al emitirse.
+  const porRevisar = casos.filter((c) => c.classification === "PENDING_REVIEW").length;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-lg border border-[var(--atm-linea)] bg-white p-0.5">
-          {([["pendientes", `Pendientes (${nPend})`], ["historico", `Histórico (${nHist})`]] as const).map(([p, etiqueta]) => (
+          {(
+            [
+              ["pendientes", `Pendientes (${nPend})`],
+              // La pestaña sólo aparece cuando hay algo retenido: una pestaña
+              // vacía y permanente enseña a ignorarla.
+              ...(nRet > 0 ? ([["retenidos", `Retenidos (${nRet})`]] as const) : []),
+              ["historico", `Histórico (${nHist})`],
+            ] as const
+          ).map(([p, etiqueta]) => (
             <button
               key={p}
               onClick={() => setTab(p)}
@@ -95,16 +119,21 @@ export function Bandeja() {
             {!cargando && filtrados.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-12 text-center text-sm text-zinc-400">
-                  {tab === "pendientes"
-                    ? buscar
-                      ? "Ningún caso pendiente coincide con la búsqueda."
-                      : "No tienes casos pendientes."
-                    : "Todavía no has cerrado ningún caso."}
+                  {buscar
+                    ? "Ningún caso de esta lista coincide con la búsqueda."
+                    : tab === "pendientes"
+                      ? "No tienes casos pendientes."
+                      : tab === "retenidos"
+                        ? "No tienes casos retenidos."
+                        : "Todavía no has cerrado ningún caso."}
                 </td>
               </tr>
             )}
             {filtrados.map((c) => {
-              const chip = c.report ? CHIP[c.report.workflowStatus] : SIN_INFORME;
+              // La retención manda sobre el estado del informe: es la razón por
+              // la que el expediente está parado, y es lo que hay que leer.
+              const chip =
+                c.classification === "HOLD" ? RETENIDO : c.report ? CHIP[c.report.workflowStatus] : SIN_INFORME;
               return (
                 <tr key={c.caseId} className="border-t border-[var(--atm-linea)] hover:bg-[var(--atm-fondo)]">
                   <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>
@@ -115,7 +144,11 @@ export function Bandeja() {
                     {c.report?.orientationAssessment ? ORIENTATION_LABEL[c.report.orientationAssessment] : "—"}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    {c.report ? (
+                    {/* SIEMPRE se puede abrir. Un retenido sin informe también:
+                        la ficha muestra entonces la vista mínima con el motivo
+                        y los antecedentes, que es justamente lo que el médico
+                        necesita para entender por qué no puede hacer nada. */}
+                    {c.report || c.classification === "HOLD" ? (
                       <Link
                         href={`/mis-tramites/${c.caseId}`}
                         className="rounded-lg border border-[var(--atm-linea)] px-3 py-1 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
