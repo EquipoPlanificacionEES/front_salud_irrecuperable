@@ -78,10 +78,27 @@ interface Report {
    * médico.
    */
   hold: { active: true; statement: string } | null;
+  /**
+   * EL EXPEDIENTE ORIGINAL. La URL la compone el backend: la pantalla no decide
+   * cuál de los documentos del caso es el expediente ni cómo se llega a él.
+   * `null` cuando el caso no tiene uno almacenado.
+   */
+  sourceDocument: { downloadUrl: string } | null;
   reviews: Review[];
   draftArtifact: { downloadUrl: string } | null;
   finalArtifact: { downloadUrl: string } | null;
-  capabilities: { canRequestChanges: boolean; canApprove: boolean; hasActiveSignature: boolean };
+  /**
+   * `canApprove` — este informe se ratifica tal como está.
+   * `canResolveAndApprove` — hay que completar la evaluación y la conclusión
+   *   antes de ratificarlo. Nunca las dos a la vez; para el médico son el MISMO
+   *   botón. Ver `approval-eligibility.ts` en el backend.
+   */
+  capabilities: {
+    canRequestChanges: boolean;
+    canApprove: boolean;
+    canResolveAndApprove: boolean;
+    hasActiveSignature: boolean;
+  };
   licenses: LicenciaBackend[];
 }
 
@@ -133,9 +150,14 @@ const fecha = (s: string) => new Date(s).toLocaleDateString("es-CL", { day: "2-d
 export function PantallaResultado({ caseId }: { caseId: string }) {
   const [rep, setRep] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [modo, setModo] = useState<"ver" | "modificar">("ver");
+  const [modo, setModo] = useState<"ver" | "modificar" | "resolver">("ver");
   const [conclusion, setConclusion] = useState("");
-  const [evaluacion, setEvaluacion] = useState<Evaluacion>("IRRECOVERABLE");
+  /**
+   * SIN VALOR POR DEFECTO. Un radio premarcado convierte «no elegí» en «elegí
+   * esto», y lo que se está eligiendo es el pronunciamiento que se firma. Sólo
+   * se precarga cuando el informe YA trae una casilla que el médico corrige.
+   */
+  const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
   const [nota, setNota] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -166,19 +188,37 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     void cargar();
   }, [cargar]);
 
-  function abrirModificar() {
+  /**
+   * Abre el formulario, tanto para corregir un informe como para completar uno
+   * que no propone nada. Los dos editan lo MISMO —la Sección IV y la casilla de
+   * la V— y por eso comparten pantalla: lo que cambia es qué hace el botón de
+   * confirmar, no lo que el médico rellena.
+   */
+  function abrirFormulario(destino: "modificar" | "resolver") {
     if (!rep) return;
-    // El punto de partida de la corrección es la conclusión TAL COMO SE
-    // ENTREGA, no el volcado interno: el médico reescribe lo que va a firmar.
+    // El punto de partida es la conclusión TAL COMO SE ENTREGA, no el volcado
+    // interno: el médico reescribe lo que va a firmar.
     setConclusion((rep.document.sections.find((s) => s.id === "IV")?.paragraphs ?? []).join("\n\n"));
-    setEvaluacion(rep.proposal.recoverableChecked ? "RECOVERABLE" : "IRRECOVERABLE");
-    setNota(rep.proposal.unresolvedNote ?? "");
+    // Sólo se precarga la casilla que el informe YA trae marcada. Cuando no hay
+    // ninguna, no se elige una por él.
+    setEvaluacion(
+      rep.proposal.recoverableChecked
+        ? "RECOVERABLE"
+        : rep.proposal.irrecoverableChecked
+          ? "IRRECOVERABLE"
+          : null,
+    );
+    // La nota es del MÉDICO y empieza vacía. Se precargaba con
+    // `unresolvedNote`, que es una frase del sistema —«Sin selección
+    // representable: requiere pronunciamiento profesional»— y acabaría enviada
+    // como observación suya en un informe que él firma.
+    setNota("");
     setMsg(null);
-    setModo("modificar");
+    setModo(destino);
   }
 
   async function enviarModificacion() {
-    if (!rep || conclusion.trim().length < 1) return;
+    if (!rep || conclusion.trim().length < 1 || evaluacion === null) return;
     setBusy(true);
     setMsg(null);
     /**
@@ -221,12 +261,33 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     }
   }
 
+  /**
+   * RATIFICAR — un solo acto para el médico, dos caminos por dentro.
+   *
+   * Con una propuesta ya formada se aprueba tal cual. Cuando el informe no
+   * propone nada, lo que se manda es la evaluación y la conclusión que él acaba
+   * de escribir: el servidor crea con ellas la versión siguiente y firma ESA.
+   * Nunca se aprueba un informe sin pronunciamiento.
+   */
   async function ratificar() {
     if (!rep) return;
+    const resolviendo = modo === "resolver";
+    if (resolviendo && (evaluacion === null || conclusion.trim().length < 1)) return;
     setBusy(true);
     setMsg(null);
     try {
-      await api(`/reports/${rep.id}/approve`, { json: {} });
+      if (resolviendo) {
+        await api(`/reports/${rep.id}/resolve-and-approve`, {
+          json: {
+            assessment: evaluacion,
+            conclusion: conclusion.trim(),
+            ...(nota.trim() ? { note: nota.trim() } : {}),
+          },
+        });
+        setModo("ver");
+      } else {
+        await api(`/reports/${rep.id}/approve`, { json: {} });
+      }
       setMsg({ ok: true, texto: "Informe ratificado. Generando el documento firmado…" });
       // El documento firmado lo produce un worker; sondeamos hasta que exista.
       let r = await cargar();
@@ -253,7 +314,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   if (!rep) return <p className="text-sm text-zinc-400">Cargando…</p>;
 
   const cap = rep.capabilities;
-  const editando = modo === "modificar";
+  const editando = modo !== "ver";
   const estado = ESTADO[rep.workflowStatus];
   const inputBase = "w-full rounded-lg border border-[var(--atm-linea)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]";
   /**
@@ -269,8 +330,25 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * La autoridad es la capacidad calculada por el backend. Aquí no se vuelve a
    * decidir nada.
    */
-  const puedeActuar = cap.canApprove || cap.canRequestChanges;
+  /**
+   * RATIFICAR ES UN SOLO BOTÓN CON DOS CAMINOS.
+   *
+   * `canApprove` cuando el informe ya propone una evaluación; `canResolveAndApprove`
+   * cuando hay que completarla. El backend nunca devuelve las dos, y aquí no se
+   * decide cuál es: se muestra el mismo botón y se toma el camino que el
+   * servidor autorizó.
+   */
+  const puedeRatificar = cap.canApprove || cap.canResolveAndApprove;
+  const puedeActuar = puedeRatificar || cap.canRequestChanges;
   const censo = censarLicencias(rep.licenses);
+  /**
+   * LA ÚNICA SEÑAL DE QUE ESTE EXPEDIENTE PIDE MÁS LECTURA es que el botón de
+   * los antecedentes se vea más. Ni banner, ni aviso, ni una explicación de por
+   * qué el sistema no concluyó: quien firma sabe lo que hace y no necesita que
+   * se lo cuenten, y `canResolveAndApprove` ya dice —sin hablar de la máquina—
+   * que el pronunciamiento tiene que ponerlo él.
+   */
+  const antecedentesDestacados = cap.canResolveAndApprove;
 
   return (
     <div className="space-y-4">
@@ -286,6 +364,24 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           <span className={`rounded-full px-3 py-1 text-xs font-medium ${estado.chip}`}>{estado.texto}</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--atm-linea)] pt-3">
+          {/* LOS ANTECEDENTES, para todos los expedientes y en todos los
+              estados. Es el expediente original tal como llegó: el médico que
+              no se convence con lo que el informe resume tiene que poder leerlo
+              él. Se abre en otra pestaña para no sacarle de la revisión. */}
+          {rep.sourceDocument && (
+            <a
+              href={`/api/v1${rep.sourceDocument.downloadUrl.replace(/^\/api\/v1/, "")}`}
+              target="_blank"
+              rel="noreferrer"
+              className={
+                antecedentesDestacados
+                  ? "rounded-lg border border-[var(--atm-azul)] bg-[var(--atm-azul)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--atm-azul2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--atm-azul2)] focus-visible:ring-offset-2"
+                  : "rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--atm-azul2)] focus-visible:ring-offset-2"
+              }
+            >
+              Ver antecedentes
+            </a>
+          )}
           <button
             onClick={() => void descargarInformePdf(rep)}
             className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
@@ -322,7 +418,8 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       )}
       {editando && (
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO.info}`}>
-          Estás modificando el informe. Solo puedes cambiar la <strong>Conclusión general (IV)</strong> y la{" "}
+          {modo === "resolver" ? "Estás ratificando el informe." : "Estás modificando el informe."} Solo puedes
+          cambiar la <strong>Conclusión general (IV)</strong> y la{" "}
           <strong>Propuesta de evaluación (V)</strong>; el resto queda tal como está.
         </p>
       )}
@@ -548,21 +645,42 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               <button onClick={() => setModo("ver")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
                 Cancelar
               </button>
-              <button onClick={enviarModificacion} disabled={busy || !conclusion.trim()}
-                      className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40">
-                {busy ? "Guardando…" : "Guardar corrección"}
+              {/* CONFIRMAR ES EL MISMO ACTO QUE ABRIÓ EL FORMULARIO. Desde
+                  «Corregir» se guarda y el informe vuelve a la bandeja; desde
+                  «Ratificar» se firma la versión que estos dos campos producen.
+                  En los dos casos hace falta una evaluación elegida: sin ella no
+                  hay nada que proponer ni que firmar. */}
+              <button
+                onClick={modo === "resolver" ? ratificar : enviarModificacion}
+                disabled={busy || !conclusion.trim() || evaluacion === null}
+                className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40"
+              >
+                {modo === "resolver"
+                  ? busy
+                    ? "Ratificando…"
+                    : "Ratificar"
+                  : busy
+                    ? "Guardando…"
+                    : "Guardar corrección"}
               </button>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               {cap.canRequestChanges && (
-                <button onClick={abrirModificar} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+                <button onClick={() => abrirFormulario("modificar")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
                   No estoy de acuerdo, corregir
                 </button>
               )}
-              {cap.canApprove && (
-                <button onClick={ratificar} disabled={busy || !cap.hasActiveSignature}
-                        className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40">
+              {/* UN SOLO BOTÓN. Cuando el informe ya propone una evaluación,
+                  ratifica; cuando no propone ninguna, abre el formulario donde
+                  el médico la aporta y luego ratifica. Para él es la misma
+                  acción, y así debe ser: la diferencia es del sistema, no suya. */}
+              {puedeRatificar && (
+                <button
+                  onClick={cap.canApprove ? ratificar : () => abrirFormulario("resolver")}
+                  disabled={busy || !cap.hasActiveSignature}
+                  className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40"
+                >
                   {busy ? "Ratificando…" : "Ratificar"}
                 </button>
               )}

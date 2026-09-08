@@ -50,6 +50,7 @@ function informe(
   capabilities: {
     canRequestChanges: boolean;
     canApprove: boolean;
+    canResolveAndApprove?: boolean;
     hasActiveSignature?: boolean;
   },
   licenses: ReturnType<typeof licencia>[] = SETENTA_Y_SIETE_INDETERMINADAS,
@@ -126,10 +127,11 @@ function informe(
     },
     thresholdStatus,
     hold: null,
+    sourceDocument: { downloadUrl: "/api/v1/cases/00000000-0000-4000-8000-0000000000ca/source-document" },
     reviews: [],
     draftArtifact: { downloadUrl: "/api/v1/reports/x/download" },
     finalArtifact: null,
-    capabilities: { hasActiveSignature: true, ...capabilities },
+    capabilities: { hasActiveSignature: true, canResolveAndApprove: false, ...capabilities },
     licenses,
   };
 }
@@ -517,3 +519,194 @@ describe("PantallaResultado · corrección estructurada", () => {
     expect(screen.getByText(/Conclusión escrita por el profesional/)).toBeDefined();
   });
 });
+
+/**
+ * EL EXPEDIENTE QUE EL SISTEMA NO PUDO CERRAR.
+ *
+ * Cinco expedientes reales llegaron sin propuesta: la tabla de licencias venía
+ * en un formato que el motor no supo leer. El médico los abría y no tenía
+ * ningún botón con el que pronunciarse.
+ *
+ * La corrección es de PRODUCTO: sigue habiendo tres acciones, las mismas y con
+ * los mismos nombres, y la única diferencia visible es que el botón de los
+ * antecedentes se ve más. Nada en pantalla habla de la máquina ni de lo que no
+ * pudo hacer.
+ */
+const ANTECEDENTES = /ver antecedentes/i;
+
+const SIN_PROPUESTA = { canRequestChanges: true, canApprove: false, canResolveAndApprove: true };
+
+describe("PantallaResultado · resolver un informe sin propuesta", () => {
+  it("se ofrecen las MISMAS tres acciones que en un informe con propuesta", async () => {
+    await pintar(SIN_PROPUESTA);
+
+    expect(screen.getByRole("link", { name: ANTECEDENTES })).toBeDefined();
+    expect(screen.getByRole("button", { name: RECTIFICAR })).toBeDefined();
+    expect(screen.getByRole("button", { name: RATIFICAR })).toBeDefined();
+  });
+
+  it("NO se le explica al médico que el sistema no concluyó", async () => {
+    vi.stubGlobal("fetch", fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA))));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    for (const prohibido of [
+      /no pudo establecer/i, /revise manualmente/i, /información insuficiente/i,
+      /evaluación manual/i, /inteligencia artificial/i, /\bIA\b/, /modelo/i,
+      /orientación automática/i, /indeterminad/i,
+    ]) {
+      expect(screen.queryByText(prohibido), String(prohibido)).toBeNull();
+    }
+  });
+
+  it("el botón de antecedentes se DESTACA, y sólo en este caso", async () => {
+    await pintar(SIN_PROPUESTA);
+    const destacado = screen.getByRole("link", { name: ANTECEDENTES }).className;
+
+    cleanup();
+    await pintar({ canRequestChanges: true, canApprove: true });
+    const normal = screen.getByRole("link", { name: ANTECEDENTES }).className;
+
+    expect(destacado).not.toBe(normal);
+    // La diferencia es de énfasis, no de contenido: el texto no cambia.
+    expect(screen.getByRole("link", { name: ANTECEDENTES }).textContent).toBe("Ver antecedentes");
+  });
+
+  it("los antecedentes apuntan al expediente del caso y se abren aparte", async () => {
+    await pintar(SIN_PROPUESTA);
+    const enlace = screen.getByRole("link", { name: ANTECEDENTES }) as HTMLAnchorElement;
+
+    expect(enlace.getAttribute("href")).toContain("/source-document");
+    expect(enlace.getAttribute("target")).toBe("_blank");
+  });
+
+  it("sin expediente almacenado no se ofrece el botón", async () => {
+    const sin = { ...informe(SIN_PROPUESTA), sourceDocument: null };
+    vi.stubGlobal("fetch", fetchDevolviendo(sin));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    expect(screen.queryByRole("link", { name: ANTECEDENTES })).toBeNull();
+  });
+
+  it("ratificar abre el formulario de decisión en vez de firmar de inmediato", async () => {
+    const fetchMock = fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA)));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+    const llamadasIniciales = fetchMock.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+
+    // No se ha mandado nada todavía: primero se decide.
+    expect(fetchMock.mock.calls.length).toBe(llamadasIniciales);
+    expect(screen.getByPlaceholderText(/Redacta la conclusión general/)).toBeDefined();
+    expect(screen.getAllByRole("radio")).toHaveLength(2);
+  });
+
+  it("no se puede confirmar sin elegir una evaluación", async () => {
+    vi.stubGlobal("fetch", fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA))));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+      target: { value: "Conclusión escrita por el profesional." },
+    });
+
+    // Ninguna casilla viene premarcada: elegir es del médico.
+    expect(screen.getAllByRole("radio").filter((r) => (r as HTMLInputElement).checked)).toHaveLength(0);
+    const confirmar = screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLButtonElement;
+    expect(confirmar.disabled).toBe(true);
+  });
+
+  it("tampoco sin conclusión, aun habiendo elegido evaluación", async () => {
+    vi.stubGlobal("fetch", fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA))));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+      target: { value: "   " },
+    });
+
+    const confirmar = screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLButtonElement;
+    expect(confirmar.disabled).toBe(true);
+  });
+
+  it("con las dos cosas, manda la decisión del médico al circuito de resolución", async () => {
+    const fetchMock = fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA)));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+      target: { value: "Conclusión escrita por el profesional." },
+    });
+    // El primer radio es IRRECOVERABLE (ver el orden en la pantalla).
+    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
+
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
+    const llamada = fetchMock.mock.calls[1] as unknown as [string, { body: string }];
+    const [url, init] = llamada;
+    expect(url).toContain("/resolve-and-approve");
+    // NO se aprueba el informe sin pronunciamiento.
+    expect(url).not.toMatch(/\/approve$/);
+    const cuerpo = JSON.parse(init.body) as { assessment: string; conclusion: string };
+    expect(cuerpo.assessment).toBe("IRRECOVERABLE");
+    expect(cuerpo.conclusion).toBe("Conclusión escrita por el profesional.");
+  });
+
+  it("con propuesta formada, ratificar firma directamente: el camino normal no cambia", async () => {
+    const fetchMock = fetchDevolviendo(informe({ canRequestChanges: true, canApprove: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
+    const segunda = fetchMock.mock.calls[1] as unknown as [string];
+    expect(segunda[0]).toMatch(/\/approve$/);
+  });
+
+  it("con el expediente retenido no queda ninguna acción, y los antecedentes siguen a mano", async () => {
+    const retenido = {
+      ...informe({ canRequestChanges: false, canApprove: false, canResolveAndApprove: false }),
+      hold: { active: true, statement: "Este caso se encuentra temporalmente retenido para revisión administrativa." },
+    };
+    vi.stubGlobal("fetch", fetchDevolviendo(retenido));
+    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
+    expect(screen.queryByRole("button", { name: RECTIFICAR })).toBeNull();
+    expect(screen.getByRole("link", { name: ANTECEDENTES })).toBeDefined();
+    expect(screen.getByText(/temporalmente retenido/)).toBeDefined();
+  });
+});
+
+/**
+ * El informe TAL COMO LLEGA cuando el sistema no concluyó: ninguna casilla
+ * marcada y la Sección V presente, que es donde el médico elige.
+ */
+function conSeccionV(base: ReturnType<typeof informe>) {
+  return {
+    ...base,
+    proposal: {
+      recoverableChecked: false,
+      irrecoverableChecked: false,
+      unresolvedNote: "Sin selección representable: requiere pronunciamiento profesional.",
+    },
+    document: {
+      ...base.document,
+      sections: [
+        ...base.document.sections,
+        { id: "V", title: "V. PROPUESTA DE EVALUACIÓN DE SALUD", fields: [], paragraphs: [] },
+      ],
+    },
+  };
+}
