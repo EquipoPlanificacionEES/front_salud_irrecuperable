@@ -31,8 +31,13 @@ export function pintarConQuery(
   client: QueryClient = crearQueryClient(),
 ): RenderResult & { client: QueryClient } {
   const r = render(<Envoltura client={client}>{ui}</Envoltura>);
+  // Se guarda el original ANTES de sustituirlo: `Object.assign` sobre `r` deja
+  // `r.rerender` apuntando a la función nueva, y llamarla desde dentro sería
+  // una recursión infinita.
+  const rerenderOriginal = r.rerender;
   return Object.assign(r, {
     client,
-    rerender: (nuevo: ReactElement) => r.rerender(<Envoltura client={client}>{nuevo}</Envoltura>),
+    rerender: (nuevo: ReactElement) =>
+      rerenderOriginal(<Envoltura client={client}>{nuevo}</Envoltura>),
   });
 }
