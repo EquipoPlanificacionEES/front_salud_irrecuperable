@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { pintarConQuery } from "@/test/utils";
 import { PantallaResultado } from "./PantallaResultado";
 
 /**
@@ -220,7 +221,7 @@ async function pintar(
   thresholdStatus?: Parameters<typeof informe>[2],
 ) {
   vi.stubGlobal("fetch", fetchDevolviendo(informe(capabilities, licenses, thresholdStatus)));
-  render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+  pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
   await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 }
 
@@ -475,7 +476,7 @@ describe("PantallaResultado · caso retenido", () => {
       hold: RETENIDO,
     };
     vi.stubGlobal("fetch", fetchDevolviendo(cuerpo));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
   }
 
@@ -555,7 +556,7 @@ describe("PantallaResultado · corrección estructurada", () => {
       return cola.shift() as Response;
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RECTIFICAR);
@@ -587,7 +588,7 @@ describe("PantallaResultado · corrección estructurada", () => {
         String(url).includes("/manual-form") ? json(FORMULARIO) : (cola.shift() as Response),
       ),
     );
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RECTIFICAR);
@@ -630,7 +631,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
 
   it("NO se le explica al médico que el sistema no concluyó", async () => {
     vi.stubGlobal("fetch", fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA))));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     for (const prohibido of [
@@ -666,7 +667,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
   it("sin expediente almacenado no se ofrece el botón", async () => {
     const sin = { ...informe(SIN_PROPUESTA), sourceDocument: null };
     vi.stubGlobal("fetch", fetchDevolviendo(sin));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     expect(screen.queryByRole("link", { name: ANTECEDENTES })).toBeNull();
@@ -675,7 +676,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
   it("ratificar abre el formulario de decisión en vez de firmar de inmediato", async () => {
     const fetchMock = fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA)));
     vi.stubGlobal("fetch", fetchMock);
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
     const llamadasIniciales = fetchMock.mock.calls.length;
 
@@ -689,7 +690,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
 
   it("no se puede confirmar sin elegir una evaluación", async () => {
     vi.stubGlobal("fetch", fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA))));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RATIFICAR);
@@ -705,7 +706,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
 
   it("tampoco sin conclusión, aun habiendo elegido evaluación", async () => {
     vi.stubGlobal("fetch", fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA))));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RATIFICAR);
@@ -721,7 +722,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
   it("con las dos cosas, manda la decisión del médico al circuito de resolución", async () => {
     const fetchMock = fetchDevolviendo(conSeccionV(informe(SIN_PROPUESTA)));
     vi.stubGlobal("fetch", fetchMock);
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RATIFICAR);
@@ -744,7 +745,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
   it("con propuesta formada, ratificar firma directamente: el camino normal no cambia", async () => {
     const fetchMock = fetchDevolviendo(informe({ canRequestChanges: true, canApprove: true }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
@@ -760,7 +761,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
       hold: { active: true, statement: "Este caso se encuentra temporalmente retenido para revisión administrativa." },
     };
     vi.stubGlobal("fetch", fetchDevolviendo(retenido));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
@@ -836,7 +837,7 @@ describe("PantallaResultado · descargas", () => {
       finalArtifact: { downloadUrl: "/api/v1/reports/x/signed-document?format=docx" },
     };
     vi.stubGlobal("fetch", fetchDevolviendo(firmado));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     const enlace = screen.getByRole("link", { name: DESCARGA_FIRMADO }) as HTMLAnchorElement;
@@ -857,7 +858,7 @@ describe("PantallaResultado · descargas", () => {
       finalArtifact: { downloadUrl: "/api/v1/reports/x/signed-document?format=docx" },
     };
     vi.stubGlobal("fetch", fetchDevolviendo(raro));
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     expect(screen.queryByRole("link", { name: DESCARGA_FIRMADO })).toBeNull();
@@ -915,7 +916,7 @@ describe("PantallaResultado · retenido sin informe", () => {
 
   it("muestra el trámite, el estado y el motivo, sin inventar una ficha clínica", async () => {
     vi.stubGlobal("fetch", backend(RETENIDO));
-    render(<PantallaResultado caseId={CASE_ID} />);
+    pintarConQuery(<PantallaResultado caseId={CASE_ID} />);
     await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
 
     expect(screen.getByText("Retenido")).toBeDefined();
@@ -927,7 +928,7 @@ describe("PantallaResultado · retenido sin informe", () => {
 
   it("ofrece los antecedentes, que es lo único accionable", async () => {
     vi.stubGlobal("fetch", backend(RETENIDO));
-    render(<PantallaResultado caseId={CASE_ID} />);
+    pintarConQuery(<PantallaResultado caseId={CASE_ID} />);
     await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
 
     const enlace = screen.getByRole("link", { name: /ver antecedentes/i }) as HTMLAnchorElement;
@@ -937,7 +938,7 @@ describe("PantallaResultado · retenido sin informe", () => {
 
   it("no ofrece ninguna acción médica", async () => {
     vi.stubGlobal("fetch", backend(RETENIDO));
-    render(<PantallaResultado caseId={CASE_ID} />);
+    pintarConQuery(<PantallaResultado caseId={CASE_ID} />);
     await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
 
     expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
@@ -946,7 +947,7 @@ describe("PantallaResultado · retenido sin informe", () => {
 
   it("no habla de la máquina ni de por qué no se pudo analizar", async () => {
     vi.stubGlobal("fetch", backend(RETENIDO));
-    render(<PantallaResultado caseId={CASE_ID} />);
+    pintarConQuery(<PantallaResultado caseId={CASE_ID} />);
     await waitFor(() => expect(screen.getByText(/Trámite 33313853/)).toBeDefined());
 
     for (const prohibido of [/\bIA\b/, /inteligencia artificial/i, /análisis fall/i, /error/i]) {
@@ -956,7 +957,7 @@ describe("PantallaResultado · retenido sin informe", () => {
 
   it("si el caso NO es suyo, sigue siendo un error y no una ficha vacía", async () => {
     vi.stubGlobal("fetch", backend(null));
-    render(<PantallaResultado caseId={CASE_ID} />);
+    pintarConQuery(<PantallaResultado caseId={CASE_ID} />);
     await waitFor(() => expect(screen.getByText(/todavía no tiene preinforme/i)).toBeDefined());
 
     expect(screen.queryByText(/Trámite/)).toBeNull();
@@ -992,7 +993,7 @@ describe("PantallaResultado · formulario estructurado", () => {
   async function abrirFormulario(capacidades = SIN_PROPUESTA) {
     const fetchMock = fetchDevolviendo(conTodasLasSecciones(informe(capacidades)));
     vi.stubGlobal("fetch", fetchMock);
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
     await abrirEditor(RATIFICAR);
     return fetchMock;
@@ -1067,7 +1068,7 @@ describe("PantallaResultado · formulario estructurado", () => {
   it("«Corregir» abre EL MISMO formulario: no hay dos", async () => {
     const fetchMock = fetchDevolviendo(conTodasLasSecciones(informe(SIN_PROPUESTA)));
     vi.stubGlobal("fetch", fetchMock);
-    render(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RECTIFICAR);

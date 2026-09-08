@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
-import type { BatchListItem, DoctorWorkload, OperationalCase } from "@/lib/backend";
+import { useBatches, useDoctorInbox, useDoctorWorkload } from "@/lib/queries";
+import type { OperationalCase } from "@/lib/backend";
 import type { Rol } from "@/lib/roles";
+import { KpiSkeleton } from "@/components/Skeleton";
 
 // Resumen. admin/calidad: /admin/batches + /admin/doctor-workload.
 // medico: /inbox — sus casos asignados, contados por estado.
@@ -24,37 +25,43 @@ import type { Rol } from "@/lib/roles";
 const EN_PROCESO = new Set(["NO_REPORT", "SIGNING"]);
 
 export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: string }) {
-  const [batches, setBatches] = useState<BatchListItem[] | null>(null);
-  const [medicos, setMedicos] = useState<DoctorWorkload[]>([]);
-  const [inbox, setInbox] = useState<OperationalCase[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const esMedico = rol === "medico";
 
-  useEffect(() => {
-    if (rol === "medico") {
-      api<{ cases: OperationalCase[] }>("/inbox")
-        .then((d) => setInbox(d.cases))
-        .catch(() => setError("No se pudo cargar tu resumen. ¿Backend arriba en :3000?"));
-      return;
-    }
-    Promise.all([
-      api<{ batches: BatchListItem[] }>("/admin/batches?limit=200"),
-      api<{ doctors: DoctorWorkload[] }>("/admin/doctor-workload?includeInactive=true"),
-    ])
-      .then(([b, d]) => {
-        setBatches([...b.batches].sort((x, y) => (y.batch.sequence ?? 0) - (x.batch.sequence ?? 0)));
-        setMedicos(d.doctors);
-      })
-      .catch(() => setError("No se pudo cargar el resumen. ¿Backend arriba en :3000?"));
-  }, [rol]);
+  // Las tres consultas se declaran siempre —los hooks no pueden ser
+  // condicionales— y `enabled` decide cuál corre. La bandeja es LA MISMA
+  // consulta que usa `Bandeja`: quien llegue segundo no vuelve a pedir 82,5 KB.
+  const inbox = useDoctorInbox(undefined, { enabled: esMedico });
+  const lotes = useBatches(undefined, { enabled: !esMedico });
+  const medicosQ = useDoctorWorkload({ enabled: !esMedico });
+
+  const error = esMedico
+    ? inbox.error
+      ? "No se pudo cargar tu resumen."
+      : null
+    : lotes.error || medicosQ.error
+      ? "No se pudo cargar el resumen."
+      : null;
+
+  const batches = useMemo(
+    () =>
+      lotes.data
+        ? [...lotes.data].sort((x, y) => (y.batch.sequence ?? 0) - (x.batch.sequence ?? 0))
+        : null,
+    [lotes.data],
+  );
+  const medicos = medicosQ.data ?? [];
 
   if (error) return <p className="text-sm text-[var(--atm-mal)]">{error}</p>;
 
   // ---- Médico -------------------------------------------------------------
-  if (rol === "medico") {
-    if (!inbox) return <p className="text-sm text-zinc-400">Cargando…</p>;
+  if (esMedico) {
+    // Primera carga: esqueleto con la forma real. Refresco de fondo: NO se
+    // borra nada, `data` sigue ahí mientras llega lo nuevo.
+    if (!inbox.data) return <KpiSkeleton tarjetas={5} />;
 
-    const cuantos = (p: (c: OperationalCase) => boolean) => inbox.filter(p).length;
-    const asignados = inbox.length;
+    const casos = inbox.data;
+    const cuantos = (p: (c: OperationalCase) => boolean) => casos.filter(p).length;
+    const asignados = casos.length;
     const porRevisar = cuantos((c) => c.classification === "PENDING_REVIEW");
     const retenidos = cuantos((c) => c.classification === "HOLD");
     const enProceso = cuantos((c) => EN_PROCESO.has(c.classification));
@@ -90,7 +97,7 @@ export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: 
   }
 
   // ---- Admin / Calidad --------------------------------------------------
-  if (!batches) return <p className="text-sm text-zinc-400">Cargando…</p>;
+  if (!batches) return <KpiSkeleton tarjetas={5} conTabla />;
 
   /**
    * LAS CIFRAS SALEN DE LA CLASIFICACIÓN, y por eso cuadran entre sí: las ocho

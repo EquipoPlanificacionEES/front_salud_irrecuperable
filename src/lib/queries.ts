@@ -43,22 +43,27 @@ const traerInbox = () => api<{ cases: OperationalCase[] }>("/inbox").then((d) =>
  * `select` deriva subconjuntos SIN pedir nada más: las tres pestañas salen de
  * esta misma lista. Pásalo definido fuera del componente para que sea estable.
  */
-export function useDoctorInbox<T = OperationalCase[]>(select?: (cases: OperationalCase[]) => T) {
+export function useDoctorInbox<T = OperationalCase[]>(
+  select?: (cases: OperationalCase[]) => T,
+  opciones?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: queryKeys.doctor.inbox(),
     queryFn: traerInbox,
     staleTime: STALE.inbox,
     gcTime: GC.corto,
     select,
+    enabled: opciones?.enabled ?? true,
   });
 }
 
-export function useSignature() {
+export function useSignature(opciones?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.doctor.signature(),
     queryFn: () => api<{ hasSignature: boolean; updatedAt: string | null }>("/doctors/me/signature"),
     staleTime: STALE.signature,
     gcTime: GC.corto,
+    enabled: opciones?.enabled ?? true,
   });
 }
 
@@ -102,7 +107,10 @@ export function usePrefetchCaseReport() {
 
 // ----------------------------------------------------------------- admin ----
 
-export function useBatches(filtros?: { status?: string; limit?: number }) {
+export function useBatches(
+  filtros?: { status?: string; limit?: number },
+  opciones?: { enabled?: boolean },
+) {
   const limit = filtros?.limit ?? 200;
   const status = filtros?.status;
   const q = new URLSearchParams({ limit: String(limit) });
@@ -112,10 +120,11 @@ export function useBatches(filtros?: { status?: string; limit?: number }) {
     queryFn: () => api<{ batches: BatchListItem[] }>(`/admin/batches?${q}`).then((d) => d.batches),
     staleTime: STALE.batches,
     gcTime: GC.largo,
+    enabled: opciones?.enabled ?? true,
   });
 }
 
-export function useDoctorWorkload() {
+export function useDoctorWorkload(opciones?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.admin.doctorWorkload(),
     queryFn: () =>
@@ -124,15 +133,17 @@ export function useDoctorWorkload() {
       ),
     staleTime: STALE.doctorWorkload,
     gcTime: GC.largo,
+    enabled: opciones?.enabled ?? true,
   });
 }
 
-export function useHolds() {
+export function useHolds(opciones?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.admin.holds(),
     queryFn: () => api<{ holds: HeldCase[] }>("/admin/holds").then((d) => d.holds),
     staleTime: STALE.holds,
     gcTime: GC.corto,
+    enabled: opciones?.enabled ?? true,
   });
 }
 
@@ -231,18 +242,31 @@ export function invalidacionesDe(qc: QueryClient) {
   const inv = (key: readonly unknown[]) => qc.invalidateQueries({ queryKey: key });
 
   return {
-    /** El médico ratifica un informe: cambia el informe y su bandeja. */
-    informeRatificado: (caseId: string) =>
+    /**
+     * El médico ratifica.
+     *
+     * `informeYaRefrescado` existe porque ratificar sondea el informe hasta que
+     * el worker emite el documento firmado: cuando termina, el que hay en caché
+     * ES el vigente. Invalidarlo entonces pediría el mismo documento otra vez,
+     * que es justo el gasto que este trabajo vino a quitar.
+     */
+    informeRatificado: (caseId: string, opciones?: { informeYaRefrescado?: boolean }) =>
       Promise.all([
-        inv(queryKeys.cases.report(caseId)),
+        opciones?.informeYaRefrescado ? Promise.resolve() : inv(queryKeys.cases.report(caseId)),
         inv(queryKeys.doctor.inbox()),
         inv(["reports"]),
       ]),
-    /** El médico corrige: nace una versión nueva del informe. */
+    /**
+     * El médico corrige: nace una versión nueva del informe.
+     *
+     * Invalidar el informe basta para que la ficha muestre la versión nueva —una
+     * consulta activa se vuelve a pedir sola al caducarla—, así que quien llama
+     * NO tiene que recargar además por su cuenta.
+     */
     informeCorregido: (caseId: string) =>
       Promise.all([
         inv(queryKeys.cases.report(caseId)),
-        inv(queryKeys.cases.manualForm("")),
+        inv(["cases", "manual-form"]),
         inv(queryKeys.doctor.inbox()),
         inv(["reports"]),
       ]),

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { pintarConQuery } from "@/test/utils";
 import { Retenidos } from "./Retenidos";
 import type { HeldCase } from "@/lib/backend";
 
@@ -89,7 +90,7 @@ function backend(holds: HeldCase[], onResolve?: (url: string, body: unknown) => 
 async function pintar(holds: HeldCase[], onResolve?: (url: string, body: unknown) => unknown) {
   const fetchMock = backend(holds, onResolve);
   vi.stubGlobal("fetch", fetchMock);
-  render(<Retenidos />);
+  pintarConQuery(<Retenidos />);
   await waitFor(() => expect(screen.getByText(holds[0]?.externalCaseId ?? "vacío")).toBeDefined());
   return fetchMock;
 }
@@ -193,7 +194,7 @@ describe("Retenidos · gestión administrativa", () => {
 
   it("sin retenciones lo dice, en vez de dejar una tabla muda", async () => {
     vi.stubGlobal("fetch", backend([]));
-    render(<Retenidos />);
+    pintarConQuery(<Retenidos />);
     await waitFor(() => expect(screen.getByText(/No hay expedientes retenidos/)).toBeDefined());
   });
 });

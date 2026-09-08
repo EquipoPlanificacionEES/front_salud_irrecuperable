@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
+import { pintarConQuery } from "@/test/utils";
 import { KpiPanel } from "./KpiPanel";
 import type { CaseClassification, OperationalCase } from "@/lib/backend";
 
@@ -72,7 +73,7 @@ function responde(cases: OperationalCase[]) {
 
 async function pintar(cases: OperationalCase[]) {
   vi.stubGlobal("fetch", responde(cases));
-  render(<KpiPanel rol="medico" nombre="Profesional" contrato="INT" />);
+  pintarConQuery(<KpiPanel rol="medico" nombre="Profesional" contrato="INT" />);
   await waitFor(() => expect(screen.getByText(/Asignados a ti/)).toBeDefined());
 }
 

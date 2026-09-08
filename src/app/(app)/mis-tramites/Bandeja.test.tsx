@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { pintarConQuery } from "@/test/utils";
 import { Bandeja } from "./Bandeja";
 import type { CaseClassification, OperationalCase } from "@/lib/backend";
 
@@ -78,7 +79,7 @@ const responde = (cases: OperationalCase[]) =>
 
 async function pintar(cases: OperationalCase[]) {
   vi.stubGlobal("fetch", responde(cases));
-  render(<Bandeja />);
+  pintarConQuery(<Bandeja />);
   await waitFor(() => expect(screen.getByRole("button", { name: /pendientes/i })).toBeDefined());
 }
 

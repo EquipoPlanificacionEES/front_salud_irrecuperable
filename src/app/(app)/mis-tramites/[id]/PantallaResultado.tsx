@@ -1,6 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCaseReport, useDoctorInbox, useInvalidar } from "@/lib/queries";
+import { queryKeys } from "@/lib/query-keys";
+import { FichaSkeleton, Refrescando } from "@/components/Skeleton";
 import { api, ApiFallo } from "@/lib/api";
 import {
   type DocumentoInforme,
@@ -167,16 +171,15 @@ const EDITABLES = new Set(["II", "III", "IV", "V"]);
 const fecha = (s: string) => new Date(s).toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" });
 
 /**
- * Busca el caso en la bandeja del propio médico. Es el único listado que le
- * pertenece, así que no revela nada que no fuera ya suyo.
+ * El respaldo para un expediente sin informe sale de la MISMA bandeja que ya
+ * tiene el médico en pantalla, no de una petición propia.
+ *
+ * Antes esto pedía `/inbox` otra vez —82,5 KB— sólo para averiguar el número de
+ * trámite de un caso retenido. Ahora es un `select` sobre la consulta
+ * compartida: si la bandeja está fresca, cuesta cero.
  */
-async function buscarEnBandeja(caseId: string): Promise<OperationalCase | null> {
-  try {
-    const { cases } = await api<{ cases: OperationalCase[] }>("/inbox");
-    return cases.find((c) => c.caseId === caseId) ?? null;
-  } catch {
-    return null;
-  }
+function seleccionarCaso(caseId: string) {
+  return (cases: OperationalCase[]) => cases.find((c) => c.caseId === caseId) ?? null;
 }
 
 /**
@@ -229,10 +232,47 @@ function VistaMinima({ caso }: { caso: OperationalCase }) {
 }
 
 export function PantallaResultado({ caseId }: { caseId: string }) {
-  const [rep, setRep] = useState<Report | null>(null);
-  /** El caso tal como lo ve su bandeja, cuando no hay informe que mostrar. */
-  const [minima, setMinima] = useState<OperationalCase | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * `/cases/:caseId/report` devuelve SIEMPRE el snapshot vigente del caso (el
+   * más reciente sin `supersededAt`); la pantalla no elige versión ni ordena
+   * artefactos por su cuenta.
+   *
+   * Cacheado por `caseId`, y con `staleTime: 0`: volver a un expediente que se
+   * acaba de mirar lo pinta entero al instante, y aun así se revalida por
+   * detrás. Es un documento que se va a firmar; nadie debe ratificar una
+   * versión superada porque la caché dijera que todavía valía.
+   */
+  const informe = useCaseReport<Report>(caseId);
+  const { refetch: refetchInforme } = informe;
+  const rep = informe.data ?? null;
+  const invalidar = useInvalidar();
+  const qc = useQueryClient();
+
+  /**
+   * UN EXPEDIENTE PUEDE NO TENER INFORME Y AUN ASÍ SER SUYO.
+   *
+   * Dos de los retenidos en producción fallaron el análisis y no tienen ningún
+   * `ReportSnapshot`: pedir su informe responde 404. Antes eso era una pantalla
+   * de error, y como además no aparecían en la bandeja, el médico no tenía forma
+   * de saber que existían.
+   *
+   * El respaldo sale de su propia bandeja —el único listado que le pertenece—,
+   * y de la MISMA consulta que ya alimenta la pantalla anterior: si viene de
+   * ahí, no cuesta ninguna petición.
+   */
+  const sinInforme = informe.error instanceof ApiFallo && informe.error.status === 404;
+  const { data: minima } = useDoctorInbox(seleccionarCaso(caseId), { enabled: sinInforme });
+
+  const error = (() => {
+    if (!informe.error) return null;
+    if (sinInforme && minima) return null; // lo resuelve la vista mínima
+    const e = informe.error;
+    if (!(e instanceof ApiFallo)) return "No se pudo cargar el caso.";
+    if (e.status === 404) return "Este caso todavía no tiene preinforme: aún no se ha procesado.";
+    if (e.status === 403) return "Este caso no está asignado a ti.";
+    return e.message;
+  })();
+
   const [modo, setModo] = useState<"ver" | "modificar" | "resolver">("ver");
   const [conclusion, setConclusion] = useState("");
   /**
@@ -254,50 +294,11 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /** Vuelve a pedir el informe y devuelve el vigente. Lo usan las dos mutaciones. */
   const cargar = useCallback(async (): Promise<Report | null> => {
-    setError(null);
-    try {
-      // `/cases/:caseId/report` devuelve SIEMPRE el snapshot vigente del caso
-      // (el más reciente sin `supersededAt`); la pantalla no elige versión ni
-      // ordena artefactos por su cuenta.
-      const r = await api<Report>(`/cases/${caseId}/report`);
-      setRep(r);
-      return r;
-    } catch (e) {
-      /**
-       * UN EXPEDIENTE PUEDE NO TENER INFORME Y AUN ASÍ SER SUYO.
-       *
-       * Dos de los retenidos en producción fallaron el análisis y no tienen
-       * ningún `ReportSnapshot`: pedir su informe responde 404. Antes eso era
-       * una pantalla de error, y como además no aparecían en la bandeja, el
-       * médico no tenía forma de saber que existían.
-       *
-       * Se pregunta entonces a su propia bandeja —el único listado que le
-       * pertenece— para poder decirle lo que sí se sabe: que está retenido y
-       * por qué no puede hacer nada. Ver `vistaMinima`.
-       */
-      if (e instanceof ApiFallo && e.status === 404) {
-        const suyo = await buscarEnBandeja(caseId);
-        if (suyo) {
-          setMinima(suyo);
-          return null;
-        }
-      }
-      setError(
-        e instanceof ApiFallo
-          ? e.status === 404
-            ? "Este caso todavía no tiene preinforme: aún no se ha procesado."
-            : e.status === 403
-              ? "Este caso no está asignado a ti."
-              : e.message
-          : "No se pudo cargar el caso.",
-      );
-      return null;
-    }
-  }, [caseId]);
-  useEffect(() => {
-    void cargar();
-  }, [cargar]);
+    const { data } = await refetchInforme();
+    return data ?? null;
+  }, [refetchInforme]);
 
   /**
    * Abre el formulario, tanto para corregir un informe como para completar uno
@@ -310,7 +311,11 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     // Se pide el formulario ANTES de abrirlo: sin él no se sabe qué cifras
     // ofrecer ni cuáles el sistema no pudo establecer.
     try {
-      const f = await api<ManualForm>(`/reports/${rep.id}/manual-form`);
+      const f = await qc.fetchQuery({
+        queryKey: queryKeys.cases.manualForm(rep.id),
+        queryFn: () => api<ManualForm>(`/reports/${rep.id}/manual-form`),
+        staleTime: 0,
+      });
       setForm(f);
       setAnalisis(f.sections.find((s) => s.id === "III")?.fields[0]?.value ?? "");
       setCifras(
@@ -366,9 +371,17 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
         },
       );
       setModo("ver");
-      // Se recarga el caso: la ficha pasa a mostrar la versión NUEVA, con la
-      // conclusión y la casilla del médico. Ratificar actúa sobre ésa.
-      await cargar();
+      /**
+       * Caduca lo que ESTA acción cambió, y nada más: el informe del caso, su
+       * formulario, la bandeja del médico y el listado. Los lotes, los usuarios
+       * o la carga de otros profesionales no los tocó nadie.
+       *
+       * Caducar el informe basta para que la ficha pase a mostrar la versión
+       * NUEVA —con la conclusión y la casilla del médico—: la consulta está
+       * activa y se vuelve a pedir sola. No hace falta recargar aparte, y
+       * hacerlo pedía el mismo documento dos veces.
+       */
+      await invalidar.informeCorregido(caseId);
       setMsg({
         ok: true,
         texto: r.newVersion
@@ -440,6 +453,10 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       }
       if (r?.finalArtifact) setMsg({ ok: true, texto: "Informe firmado. Ya puedes descargarlo." });
       else if (r?.workflowStatus === "SIGNING_FAILED") setMsg({ ok: false, texto: "No se pudo generar el documento firmado. Avisa al administrador." });
+      // El expediente sale de «pendientes» en la bandeja y entra en el
+      // histórico: eso hay que caducarlo. El informe no, que se acaba de
+      // sondear y el de la caché ya es el vigente.
+      await invalidar.informeRatificado(caseId, { informeYaRefrescado: true });
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo ratificar." });
     } finally {
@@ -455,7 +472,9 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     );
   }
   if (minima) return <VistaMinima caso={minima} />;
-  if (!rep) return <p className="text-sm text-zinc-400">Cargando…</p>;
+  // Primera carga: esqueleto con la forma de la ficha. Al volver a un caso ya
+  // visto NO se pasa por aquí: `rep` viene de la caché y se pinta entero.
+  if (!rep) return <FichaSkeleton />;
 
   const cap = rep.capabilities;
   const editando = modo !== "ver";

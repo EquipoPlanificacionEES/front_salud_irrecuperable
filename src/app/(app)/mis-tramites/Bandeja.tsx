@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { api, ApiFallo } from "@/lib/api";
+import { ApiFallo } from "@/lib/api";
+import { useDoctorInbox, usePrefetchCaseReport } from "@/lib/queries";
+import { BandejaSkeleton, Refrescando } from "@/components/Skeleton";
 import {
   ORIENTATION_LABEL,
   PESTAÑA_POR_CATEGORIA,
@@ -35,21 +37,26 @@ const SIN_INFORME = { texto: "En proceso", clase: "bg-zinc-100 text-zinc-500" };
 const RETENIDO = { texto: "Retenido", clase: "bg-amber-50 text-[var(--atm-obs)]" };
 
 export function Bandeja() {
-  const [casos, setCasos] = useState<OperationalCase[]>([]);
+  // La MISMA consulta que alimenta el resumen y el respaldo de la ficha. Quien
+  // llegue segundo dentro de la ventana de frescura no vuelve a pedir 82,5 KB.
+  const { data, error: fallo, isPending, isFetching } = useDoctorInbox();
+  const prefetchInforme = usePrefetchCaseReport();
+
+  // Estado de INTERFAZ, que no es estado de servidor y por eso sigue aquí.
   const [tab, setTab] = useState<PestañaBandeja>("pendientes");
   const [buscar, setBuscar] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [cargando, setCargando] = useState(true);
 
-  useEffect(() => {
-    api<{ cases: OperationalCase[] }>("/inbox")
-      .then((d) => setCasos(d.cases))
-      .catch((e) => setError(e instanceof ApiFallo ? e.message : "No se pudo cargar la bandeja."))
-      .finally(() => setCargando(false));
-  }, []);
+  const casos = useMemo(() => data ?? [], [data]);
+  const error = fallo
+    ? fallo instanceof ApiFallo
+      ? fallo.message
+      : "No se pudo cargar la bandeja."
+    : null;
 
   const pestañaDe = (c: OperationalCase) => PESTAÑA_POR_CATEGORIA[c.classification];
 
+  // Las tres pestañas salen de esta misma lista: cambiar de pestaña no pide
+  // nada al servidor, y no debe empezar a hacerlo.
   const filtrados = useMemo(() => {
     const q = buscar.trim().toLowerCase();
     return casos
@@ -64,6 +71,10 @@ export function Bandeja() {
   // Los que ESPERAN SU PRONUNCIAMIENTO, que no es lo mismo que «pendientes»:
   // ahí van también los que está firmando y los que fallaron al emitirse.
   const porRevisar = casos.filter((c) => c.classification === "PENDING_REVIEW").length;
+
+  // Sólo la PRIMERA carga enseña esqueleto. Un refresco posterior mantiene la
+  // tabla en pantalla y lo dice con `Refrescando`.
+  if (isPending) return <BandejaSkeleton />;
 
   return (
     <div className="space-y-4">
@@ -89,6 +100,7 @@ export function Bandeja() {
             </button>
           ))}
         </div>
+        <Refrescando visible={isFetching} />
         {porRevisar > 0 && tab === "pendientes" && (
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-[var(--atm-azul)]">
             {porRevisar} esperan tu pronunciamiento
@@ -115,8 +127,7 @@ export function Bandeja() {
             </tr>
           </thead>
           <tbody>
-            {cargando && <tr><td colSpan={4} className="px-4 py-12 text-center text-zinc-400">Cargando…</td></tr>}
-            {!cargando && filtrados.length === 0 && (
+            {filtrados.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-12 text-center text-sm text-zinc-400">
                   {buscar
@@ -151,6 +162,11 @@ export function Bandeja() {
                     {c.report || c.classification === "HOLD" ? (
                       <Link
                         href={`/mis-tramites/${c.caseId}`}
+                        // Sólo el expediente sobre el que ya hay intención. Traer
+                        // los 93 informes por si acaso serían 93 peticiones para
+                        // abrir uno.
+                        onMouseEnter={() => prefetchInforme(c.caseId)}
+                        onFocus={() => prefetchInforme(c.caseId)}
                         className="rounded-lg border border-[var(--atm-linea)] px-3 py-1 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
                       >
                         {tab === "pendientes" ? "Revisar" : "Ver"}
