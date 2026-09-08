@@ -1,0 +1,284 @@
+{
+  "pasos": [
+    {
+      "nombre": "A. LOGIN COLD (submit → primera pantalla útil)",
+      "totalMs": 2329,
+      "contenidoUtilMs": 1908,
+      "backendTotal": {
+        "POST /api/v1/auth/login": 1,
+        "GET /api/v1/auth/me": 11,
+        "GET /api/v1/inbox": 1
+      },
+      "backendPorOrigen": {
+        "proxy(navegador)": {
+          "POST /api/v1/auth/login": 1,
+          "GET /api/v1/inbox": 1
+        },
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 11
+        }
+      },
+      "desdeElNavegador": {
+        "POST /api/v1/auth/login": 1,
+        "GET /api/v1/inbox": 1
+      },
+      "nLlamadasBackend": 13,
+      "nLlamadasNavegador": 2,
+      "secuencia": [
+        "+0ms CLI /api/v1/auth/login",
+        "+224ms SRV /api/v1/auth/me",
+        "+432ms SRV /api/v1/auth/me",
+        "+640ms SRV /api/v1/auth/me",
+        "+842ms SRV /api/v1/auth/me",
+        "+853ms SRV /api/v1/auth/me",
+        "+1057ms SRV /api/v1/auth/me",
+        "+1278ms CLI /api/v1/inbox",
+        "+1279ms SRV /api/v1/auth/me",
+        "+1279ms SRV /api/v1/auth/me",
+        "+1279ms SRV /api/v1/auth/me",
+        "+1500ms SRV /api/v1/auth/me",
+        "+1500ms SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "B. /kpi → /mis-tramites (COLD)",
+      "totalMs": 816,
+      "contenidoUtilMs": 816,
+      "backendTotal": {
+        "GET /api/v1/auth/me": 3,
+        "GET /api/v1/inbox": 1
+      },
+      "backendPorOrigen": {
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 3
+        },
+        "proxy(navegador)": {
+          "GET /api/v1/inbox": 1
+        }
+      },
+      "desdeElNavegador": {
+        "GET /api/v1/inbox": 1
+      },
+      "nLlamadasBackend": 4,
+      "nLlamadasNavegador": 1,
+      "secuencia": [
+        "+0ms SRV /api/v1/auth/me",
+        "+205ms SRV /api/v1/auth/me",
+        "+427ms CLI /api/v1/inbox",
+        "+638ms SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "C1. /mis-tramites → detalle (COLD)",
+      "totalMs": 809,
+      "contenidoUtilMs": 809,
+      "backendTotal": {
+        "GET /api/v1/auth/me": 3,
+        "GET /api/v1/cases/{id}/report": 1
+      },
+      "backendPorOrigen": {
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 3
+        },
+        "proxy(navegador)": {
+          "GET /api/v1/cases/{id}/report": 1
+        }
+      },
+      "desdeElNavegador": {
+        "GET /api/v1/cases/{id}/report": 1
+      },
+      "nLlamadasBackend": 4,
+      "nLlamadasNavegador": 1,
+      "secuencia": [
+        "+0ms SRV /api/v1/auth/me",
+        "+35ms SRV /api/v1/auth/me",
+        "+204ms SRV /api/v1/auth/me",
+        "+428ms CLI /api/v1/cases/{id}/report"
+      ]
+    },
+    {
+      "nombre": "C2. detalle → /mis-tramites (REVISIT <10s)",
+      "totalMs": 823,
+      "contenidoUtilMs": 822,
+      "backendTotal": {
+        "GET /api/v1/auth/me": 2,
+        "GET /api/v1/inbox": 1
+      },
+      "backendPorOrigen": {
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 2
+        },
+        "proxy(navegador)": {
+          "GET /api/v1/inbox": 1
+        }
+      },
+      "desdeElNavegador": {
+        "GET /api/v1/inbox": 1
+      },
+      "nLlamadasBackend": 3,
+      "nLlamadasNavegador": 1,
+      "secuencia": [
+        "+0ms SRV /api/v1/auth/me",
+        "+207ms SRV /api/v1/auth/me",
+        "+428ms CLI /api/v1/inbox"
+      ]
+    },
+    {
+      "nombre": "D1. pestaña Pendientes → Histórico",
+      "totalMs": 527,
+      "contenidoUtilMs": null,
+      "backendTotal": {
+        "GET /api/v1/auth/me": 12
+      },
+      "backendPorOrigen": {
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 12
+        }
+      },
+      "desdeElNavegador": {},
+      "nLlamadasBackend": 12,
+      "nLlamadasNavegador": 0,
+      "secuencia": [
+        "+0ms SRV /api/v1/auth/me",
+        "+1ms SRV /api/v1/auth/me",
+        "+1ms SRV /api/v1/auth/me",
+        "+1ms SRV /api/v1/auth/me",
+        "+220ms SRV /api/v1/auth/me",
+        "+220ms SRV /api/v1/auth/me",
+        "+221ms SRV /api/v1/auth/me",
+        "+221ms SRV /api/v1/auth/me",
+        "+446ms SRV /api/v1/auth/me",
+        "+447ms SRV /api/v1/auth/me",
+        "+447ms SRV /api/v1/auth/me",
+        "+447ms SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "D2. pestaña Histórico → Pendientes",
+      "totalMs": 527,
+      "contenidoUtilMs": null,
+      "backendTotal": {},
+      "backendPorOrigen": {},
+      "desdeElNavegador": {},
+      "nLlamadasBackend": 0,
+      "nLlamadasNavegador": 0,
+      "secuencia": []
+    },
+    {
+      "nombre": "E1. volver al MISMO caso (REVISIT del detalle)",
+      "totalMs": 1410,
+      "contenidoUtilMs": 755,
+      "backendTotal": {
+        "GET /api/v1/auth/me": 8,
+        "GET /api/v1/cases/{id}/report": 1
+      },
+      "backendPorOrigen": {
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 8
+        },
+        "proxy(navegador)": {
+          "GET /api/v1/cases/{id}/report": 1
+        }
+      },
+      "desdeElNavegador": {
+        "GET /api/v1/cases/{id}/report": 1
+      },
+      "nLlamadasBackend": 9,
+      "nLlamadasNavegador": 1,
+      "secuencia": [
+        "+0ms SRV /api/v1/auth/me",
+        "+207ms SRV /api/v1/auth/me",
+        "+454ms CLI /api/v1/cases/{id}/report",
+        "+460ms SRV /api/v1/auth/me",
+        "+462ms SRV /api/v1/auth/me",
+        "+462ms SRV /api/v1/auth/me",
+        "+685ms SRV /api/v1/auth/me",
+        "+685ms SRV /api/v1/auth/me",
+        "+686ms SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "E2. /mis-tramites → /kpi (REVISIT del dashboard)",
+      "totalMs": 1406,
+      "contenidoUtilMs": 758,
+      "backendTotal": {
+        "GET /api/v1/auth/me": 7,
+        "GET /api/v1/inbox": 1
+      },
+      "backendPorOrigen": {
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 7
+        },
+        "proxy(navegador)": {
+          "GET /api/v1/inbox": 1
+        }
+      },
+      "desdeElNavegador": {
+        "GET /api/v1/inbox": 1
+      },
+      "nLlamadasBackend": 8,
+      "nLlamadasNavegador": 1,
+      "secuencia": [
+        "+0ms SRV /api/v1/auth/me",
+        "+208ms SRV /api/v1/auth/me",
+        "+461ms CLI /api/v1/inbox",
+        "+466ms SRV /api/v1/auth/me",
+        "+466ms SRV /api/v1/auth/me",
+        "+467ms SRV /api/v1/auth/me",
+        "+686ms SRV /api/v1/auth/me",
+        "+688ms SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "F. /kpi → /mi-firma",
+      "totalMs": 30,
+      "contenidoUtilMs": 30,
+      "backendTotal": {
+        "GET /api/v1/auth/me": 1
+      },
+      "backendPorOrigen": {
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 1
+        }
+      },
+      "desdeElNavegador": {},
+      "nLlamadasBackend": 1,
+      "nLlamadasNavegador": 0,
+      "secuencia": [
+        "+0ms SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "G. LOGOUT",
+      "totalMs": 280,
+      "contenidoUtilMs": null,
+      "backendTotal": {
+        "POST /api/v1/auth/logout": 1,
+        "GET /api/v1/auth/me": 1
+      },
+      "backendPorOrigen": {
+        "proxy(navegador)": {
+          "POST /api/v1/auth/logout": 1
+        },
+        "servidor-next(middleware+guard)": {
+          "GET /api/v1/auth/me": 1
+        }
+      },
+      "desdeElNavegador": {
+        "POST /api/v1/auth/logout": 1
+      },
+      "nLlamadasBackend": 2,
+      "nLlamadasNavegador": 1,
+      "secuencia": [
+        "+0ms CLI /api/v1/auth/logout",
+        "+157ms SRV /api/v1/auth/me"
+      ]
+    }
+  ],
+  "storageTrasLogout": {
+    "localStorage": {},
+    "sessionStorage": {},
+    "cookies": []
+  },
+  "mutacionesAbortadas": 0
+}

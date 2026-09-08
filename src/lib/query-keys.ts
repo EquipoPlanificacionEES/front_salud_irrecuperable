@@ -67,9 +67,21 @@ export const STALE = {
   /** La bandeja la mueven las acciones del propio médico —que invalidan— y los
    *  workers de firma, que no avisan. 30 s cubre ir y volver sin ocultar nada. */
   inbox: 30_000,
-  /** Documento clínico que se va a firmar: se sirve del caché al instante pero se
-   *  revalida siempre, para que nadie ratifique una versión superada. */
-  caseReport: 0,
+  /**
+   * El documento que se va a firmar.
+   *
+   * Cinco segundos, y la cifra tiene un razonamiento detrás. `staleTime` sólo
+   * decide si un MONTAJE nuevo vuelve a pedir el dato; una vez en pantalla, el
+   * informe se queda ahí los minutos que el médico tarde en leerlo. O sea que
+   * bajarlo a cero no hace que lo que firma esté más fresco: sólo obliga a pedir
+   * otra vez lo que se acababa de prefetchar al pasar el ratón, y eso se midió
+   * —dos peticiones del mismo informe para abrir un caso—.
+   *
+   * Lo que SÍ mantiene fresco lo que hay en pantalla es `refetchOnWindowFocus`,
+   * que revalida al volver a la pestaña, y la invalidación explícita de cada
+   * mutación que toca el informe.
+   */
+  caseReport: 5_000,
   manualForm: 0,
   /** Incidencia administrativa: varios administradores pueden actuar a la vez. */
   holds: 15_000,

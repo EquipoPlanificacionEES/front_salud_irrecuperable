@@ -1,0 +1,541 @@
+{
+  "meta": {
+    "fecha": "2026-09-08T21:03:02.756Z",
+    "frontendCommit": "c4093ef",
+    "backendCommit": "3be9a2c",
+    "dataset": {
+      "casos": 93,
+      "asignacionesActivas": 93,
+      "medicos": 2,
+      "usuarios": 4,
+      "lotes": 1,
+      "retencionesActivas": 2,
+      "snapshotsVigentes": 534
+    },
+    "entorno": "build de producción de Next 16 (next start) contra backend simulado; latencia por salto = 197 ms, el p50 medido de Render",
+    "latenciaProduccionMedida": {
+      "endpoint": "GET /api/v1/auth/me (401)",
+      "n": 10,
+      "minMs": 178,
+      "p50Ms": 197,
+      "p95Ms": 204,
+      "maxMs": 529
+    },
+    "repeticiones": 5,
+    "advertencia": "p95 sobre 5 muestras no es robusto; sirve como referencia interna, no como SLA."
+  },
+  "payloads": {
+    "/inbox": {
+      "bytes": 82524,
+      "items": 93,
+      "bytesPorItem": 887,
+      "paginacion": false
+    },
+    "/admin/cases?limit=100": {
+      "bytes": 82524,
+      "items": 93,
+      "bytesPorItem": 887,
+      "paginacion": true
+    },
+    "/reports?limit=100": {
+      "bytes": 48636,
+      "items": 92,
+      "bytesPorItem": 528,
+      "paginacion": true
+    },
+    "/admin/holds": {
+      "bytes": 2063,
+      "items": 2,
+      "bytesPorItem": 1031,
+      "paginacion": false
+    },
+    "/admin/batches?limit=200": {
+      "bytes": 496,
+      "items": 1,
+      "bytesPorItem": 496,
+      "paginacion": true
+    },
+    "/admin/doctor-workload": {
+      "bytes": 657,
+      "items": 2,
+      "bytesPorItem": 328,
+      "paginacion": false
+    },
+    "/cases/{id}/report": {
+      "bytes": 8954,
+      "items": 1,
+      "paginacion": false
+    },
+    "/auth/me": {
+      "bytes": 300,
+      "items": 1,
+      "paginacion": false
+    }
+  },
+  "escenarios": {
+    "medico": [
+      {
+        "paso": "A. LOGIN COLD (submit → primera pantalla útil)",
+        "contenidoUtilMs": {
+          "min": 1890,
+          "p50": 1912,
+          "p95": 1952,
+          "max": 1952
+        },
+        "totalMs": {
+          "p50": 2342
+        },
+        "backendRequests": 13,
+        "authMe": 11,
+        "endpointsDeDatos": {
+          "POST /api/v1/auth/login": 1,
+          "GET /api/v1/inbox": 1
+        }
+      },
+      {
+        "paso": "B. /kpi → /mis-tramites (COLD)",
+        "contenidoUtilMs": {
+          "min": 810,
+          "p50": 819,
+          "p95": 829,
+          "max": 829
+        },
+        "totalMs": {
+          "p50": 820
+        },
+        "backendRequests": 4,
+        "authMe": 3,
+        "endpointsDeDatos": {
+          "GET /api/v1/inbox": 1
+        }
+      },
+      {
+        "paso": "C1. /mis-tramites → detalle (COLD)",
+        "contenidoUtilMs": {
+          "min": 806,
+          "p50": 809,
+          "p95": 820,
+          "max": 820
+        },
+        "totalMs": {
+          "p50": 810
+        },
+        "backendRequests": 4,
+        "authMe": 3,
+        "endpointsDeDatos": {
+          "GET /api/v1/cases/{id}/report": 1
+        }
+      },
+      {
+        "paso": "C2. detalle → /mis-tramites (REVISIT <10s)",
+        "contenidoUtilMs": {
+          "min": 809,
+          "p50": 816,
+          "p95": 822,
+          "max": 822
+        },
+        "totalMs": {
+          "p50": 816
+        },
+        "backendRequests": 3,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/inbox": 1
+        }
+      },
+      {
+        "paso": "D1. pestaña Pendientes → Histórico",
+        "contenidoUtilMs": null,
+        "totalMs": {
+          "p50": 529
+        },
+        "backendRequests": 12,
+        "authMe": 12,
+        "endpointsDeDatos": {}
+      },
+      {
+        "paso": "D2. pestaña Histórico → Pendientes",
+        "contenidoUtilMs": null,
+        "totalMs": {
+          "p50": 526
+        },
+        "backendRequests": 0,
+        "authMe": 0,
+        "endpointsDeDatos": {}
+      },
+      {
+        "paso": "E1. volver al MISMO caso (REVISIT del detalle)",
+        "contenidoUtilMs": {
+          "min": 749,
+          "p50": 755,
+          "p95": 762,
+          "max": 762
+        },
+        "totalMs": {
+          "p50": 1412
+        },
+        "backendRequests": 9,
+        "authMe": 8,
+        "endpointsDeDatos": {
+          "GET /api/v1/cases/{id}/report": 1
+        }
+      },
+      {
+        "paso": "E2. /mis-tramites → /kpi (REVISIT del dashboard)",
+        "contenidoUtilMs": {
+          "min": 741,
+          "p50": 752,
+          "p95": 758,
+          "max": 758
+        },
+        "totalMs": {
+          "p50": 1404
+        },
+        "backendRequests": 8,
+        "authMe": 7,
+        "endpointsDeDatos": {
+          "GET /api/v1/inbox": 1
+        }
+      },
+      {
+        "paso": "F. /kpi → /mi-firma",
+        "contenidoUtilMs": {
+          "min": 24,
+          "p50": 29,
+          "p95": 39,
+          "max": 39
+        },
+        "totalMs": {
+          "p50": 30
+        },
+        "backendRequests": 0,
+        "authMe": 1,
+        "endpointsDeDatos": {}
+      },
+      {
+        "paso": "G. LOGOUT",
+        "contenidoUtilMs": null,
+        "totalMs": {
+          "p50": 281
+        },
+        "backendRequests": 2,
+        "authMe": 1,
+        "endpointsDeDatos": {
+          "POST /api/v1/auth/logout": 1
+        }
+      }
+    ],
+    "medico_storageTrasLogout": {
+      "localStorage": {},
+      "sessionStorage": {},
+      "cookies": []
+    },
+    "medico_mutacionesAbortadas": 0,
+    "admin": [
+      {
+        "paso": "A. LOGIN COLD (admin)",
+        "contenidoUtilMs": {
+          "min": 1678,
+          "p50": 1739,
+          "p95": 1759,
+          "max": 1759
+        },
+        "totalMs": {
+          "p50": 3465
+        },
+        "backendRequests": 30,
+        "authMe": 28,
+        "endpointsDeDatos": {
+          "POST /api/v1/auth/login": 1,
+          "GET /api/v1/admin/batches": 1
+        }
+      },
+      {
+        "paso": "COLD  clic → /admin/casos",
+        "contenidoUtilMs": {
+          "min": 355,
+          "p50": 365,
+          "p95": 367,
+          "max": 367
+        },
+        "totalMs": {
+          "p50": 721
+        },
+        "backendRequests": 5,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/admin/doctor-workload": 1,
+          "GET /api/v1/admin/cases": 1
+        }
+      },
+      {
+        "paso": "COLD  clic → /admin/retenidos",
+        "contenidoUtilMs": {
+          "min": 346,
+          "p50": 354,
+          "p95": 369,
+          "max": 369
+        },
+        "totalMs": {
+          "p50": 707
+        },
+        "backendRequests": 3,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/holds": 1
+        }
+      },
+      {
+        "paso": "COLD  clic → /admin/informes",
+        "contenidoUtilMs": {
+          "min": 341,
+          "p50": 359,
+          "p95": 372,
+          "max": 372
+        },
+        "totalMs": {
+          "p50": 722
+        },
+        "backendRequests": 4,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/reports": 1
+        }
+      },
+      {
+        "paso": "COLD  clic → /admin/asignaciones",
+        "contenidoUtilMs": {
+          "min": 559,
+          "p50": 576,
+          "p95": 580,
+          "max": 580
+        },
+        "totalMs": {
+          "p50": 934
+        },
+        "backendRequests": 4,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/admin/batches/{id}/assignment-context": 1
+        }
+      },
+      {
+        "paso": "COLD  clic → /admin/usuarios",
+        "contenidoUtilMs": {
+          "min": 344,
+          "p50": 355,
+          "p95": 371,
+          "max": 371
+        },
+        "totalMs": {
+          "p50": 710
+        },
+        "backendRequests": 4,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/users": 1,
+          "GET /api/v1/admin/doctors": 1
+        }
+      },
+      {
+        "paso": "REVISIT<10s clic → /admin/casos",
+        "contenidoUtilMs": {
+          "min": 344,
+          "p50": 354,
+          "p95": 361,
+          "max": 361
+        },
+        "totalMs": {
+          "p50": 717
+        },
+        "backendRequests": 5,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/admin/doctor-workload": 1,
+          "GET /api/v1/admin/cases": 1
+        }
+      },
+      {
+        "paso": "REVISIT<10s clic → /admin/retenidos",
+        "contenidoUtilMs": {
+          "min": 354,
+          "p50": 357,
+          "p95": 362,
+          "max": 362
+        },
+        "totalMs": {
+          "p50": 716
+        },
+        "backendRequests": 3,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/holds": 1
+        }
+      },
+      {
+        "paso": "REVISIT<10s clic → /admin/informes",
+        "contenidoUtilMs": {
+          "min": 355,
+          "p50": 357,
+          "p95": 362,
+          "max": 362
+        },
+        "totalMs": {
+          "p50": 719
+        },
+        "backendRequests": 4,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/reports": 1
+        }
+      },
+      {
+        "paso": "REVISIT<10s clic → /admin/asignaciones",
+        "contenidoUtilMs": {
+          "min": 558,
+          "p50": 567,
+          "p95": 583,
+          "max": 583
+        },
+        "totalMs": {
+          "p50": 935
+        },
+        "backendRequests": 4,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/admin/batches/{id}/assignment-context": 1
+        }
+      },
+      {
+        "paso": "REVISIT<10s clic → /admin/usuarios",
+        "contenidoUtilMs": {
+          "min": 351,
+          "p50": 353,
+          "p95": 360,
+          "max": 360
+        },
+        "totalMs": {
+          "p50": 711
+        },
+        "backendRequests": 4,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/users": 1,
+          "GET /api/v1/admin/doctors": 1
+        }
+      },
+      {
+        "paso": "REVISIT~35s clic → /admin/casos",
+        "contenidoUtilMs": {
+          "min": 354,
+          "p50": 369,
+          "p95": 396,
+          "max": 396
+        },
+        "totalMs": {
+          "p50": 735
+        },
+        "backendRequests": 5,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/admin/doctor-workload": 1,
+          "GET /api/v1/admin/cases": 1
+        }
+      },
+      {
+        "paso": "REVISIT~35s clic → /admin/retenidos",
+        "contenidoUtilMs": {
+          "min": 350,
+          "p50": 354,
+          "p95": 360,
+          "max": 360
+        },
+        "totalMs": {
+          "p50": 704
+        },
+        "backendRequests": 3,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/holds": 1
+        }
+      },
+      {
+        "paso": "RECARGA DURA (F5) de /admin/retenidos",
+        "contenidoUtilMs": {
+          "min": 15,
+          "p50": 17,
+          "p95": 18,
+          "max": 18
+        },
+        "totalMs": {
+          "p50": 2543
+        },
+        "backendRequests": 24,
+        "authMe": 23,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/holds": 1
+        }
+      },
+      {
+        "paso": "clic → /kpi (nav principal)",
+        "contenidoUtilMs": {
+          "min": 352,
+          "p50": 355,
+          "p95": 375,
+          "max": 375
+        },
+        "totalMs": {
+          "p50": 747
+        },
+        "backendRequests": 4,
+        "authMe": 2,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1,
+          "GET /api/v1/admin/doctor-workload": 1
+        }
+      },
+      {
+        "paso": "clic → /admin (volver)",
+        "contenidoUtilMs": {
+          "min": 784,
+          "p50": 784,
+          "p95": 796,
+          "max": 796
+        },
+        "totalMs": {
+          "p50": 1140
+        },
+        "backendRequests": 5,
+        "authMe": 4,
+        "endpointsDeDatos": {
+          "GET /api/v1/admin/batches": 1
+        }
+      },
+      {
+        "paso": "LOGOUT",
+        "contenidoUtilMs": null,
+        "totalMs": {
+          "p50": 520
+        },
+        "backendRequests": 1,
+        "authMe": 0,
+        "endpointsDeDatos": {
+          "POST /api/v1/auth/logout": 1
+        }
+      }
+    ],
+    "admin_storageTrasLogout": {
+      "localStorage": {},
+      "sessionStorage": {},
+      "cookies": []
+    },
+    "admin_mutacionesAbortadas": 0
+  }
+}

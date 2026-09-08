@@ -72,10 +72,10 @@ export function useSignature<T>(opciones?: { enabled?: boolean }) {
 /**
  * El informe vigente de un expediente.
  *
- * `staleTime: 0` a propósito. Es el documento que el médico va a firmar: se
- * pinta el que ya está en caché para que la ficha aparezca entera al instante,
- * pero SIEMPRE se revalida por detrás. Nadie ratifica una versión superada
- * porque la caché dijera que aún valía.
+ * Se pinta el que ya está en caché para que la ficha aparezca entera al instante
+ * en vez de reconstruirse. Sobre por qué la frescura es de cinco segundos y no
+ * de cero, ver `STALE.caseReport`: el razonamiento importa, porque la intuición
+ * dice lo contrario.
  */
 export function useCaseReport<T>(caseId: string, opciones?: { enabled?: boolean }) {
   return useQuery<T>({
@@ -101,7 +101,10 @@ export function usePrefetchCaseReport() {
     void qc.prefetchQuery({
       queryKey: queryKeys.cases.report(caseId),
       queryFn: () => api(`/cases/${caseId}/report`),
-      staleTime: STALE.inbox, // no re-prefetchar en cada pasada del ratón
+      // La MISMA frescura que la consulta que lo va a consumir. Con una distinta,
+      // el montaje descartaría lo prefetchado y pediría el informe dos veces:
+      // medido, y era exactamente lo que pasaba.
+      staleTime: STALE.caseReport,
     });
 }
 

@@ -13,3 +13,8 @@ next-env.d.ts
 
 # Vercel
 .vercel
+
+# Estado de sesión que genera el arnés de rendimiento. Contiene la cookie de una
+# sesión REAL: nunca se versiona.
+estado-sesion.json
+scripts/performance/resultados/

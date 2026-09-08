@@ -1,0 +1,249 @@
+{
+  "pasos": [
+    {
+      "nombre": "A. LOGIN COLD (admin)",
+      "totalMs": 1781,
+      "datosListosMs": 714,
+      "nBackend": 4,
+      "authMe": 2,
+      "datos": {
+        "POST /api/v1/auth/login": 1,
+        "GET /api/v1/admin/batches": 1
+      },
+      "secuencia": [
+        "CLI /api/v1/auth/login",
+        "SRV /api/v1/auth/me",
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/batches"
+      ]
+    },
+    {
+      "nombre": "COLD  clic → /admin/casos",
+      "totalMs": 622,
+      "datosListosMs": 261,
+      "nBackend": 3,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/doctor-workload": 1,
+        "GET /api/v1/admin/cases": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/doctor-workload",
+        "CLI /api/v1/admin/cases"
+      ]
+    },
+    {
+      "nombre": "COLD  clic → /admin/retenidos",
+      "totalMs": 598,
+      "datosListosMs": 250,
+      "nBackend": 2,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/holds": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/holds"
+      ]
+    },
+    {
+      "nombre": "COLD  clic → /admin/informes",
+      "totalMs": 628,
+      "datosListosMs": 257,
+      "nBackend": 2,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/reports": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/reports"
+      ]
+    },
+    {
+      "nombre": "COLD  clic → /admin/asignaciones",
+      "totalMs": 841,
+      "datosListosMs": 465,
+      "nBackend": 3,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/batches": 1,
+        "GET /api/v1/admin/batches/{id}/assignment-context": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/batches",
+        "CLI /api/v1/admin/batches/{id}/assignment-context"
+      ]
+    },
+    {
+      "nombre": "COLD  clic → /admin/usuarios",
+      "totalMs": 609,
+      "datosListosMs": 262,
+      "nBackend": 3,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/users": 1,
+        "GET /api/v1/admin/doctors": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/users",
+        "CLI /api/v1/admin/doctors"
+      ]
+    },
+    {
+      "nombre": "REVISIT<10s clic → /admin/casos",
+      "totalMs": 20359,
+      "datosListosMs": null,
+      "nBackend": 1,
+      "authMe": 1,
+      "datos": {},
+      "secuencia": [
+        "SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "REVISIT<10s clic → /admin/retenidos",
+      "totalMs": 616,
+      "datosListosMs": 263,
+      "nBackend": 2,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/holds": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/holds"
+      ]
+    },
+    {
+      "nombre": "REVISIT<10s clic → /admin/informes",
+      "totalMs": 20365,
+      "datosListosMs": null,
+      "nBackend": 1,
+      "authMe": 1,
+      "datos": {},
+      "secuencia": [
+        "SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "REVISIT<10s clic → /admin/asignaciones",
+      "totalMs": 621,
+      "datosListosMs": 257,
+      "nBackend": 2,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/batches/{id}/assignment-context": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/batches/{id}/assignment-context"
+      ]
+    },
+    {
+      "nombre": "REVISIT<10s clic → /admin/usuarios",
+      "totalMs": 20370,
+      "datosListosMs": null,
+      "nBackend": 1,
+      "authMe": 1,
+      "datos": {},
+      "secuencia": [
+        "SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "REVISIT~35s clic → /admin/casos",
+      "totalMs": 628,
+      "datosListosMs": 266,
+      "nBackend": 3,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/doctor-workload": 1,
+        "GET /api/v1/admin/cases": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/doctor-workload",
+        "CLI /api/v1/admin/cases"
+      ]
+    },
+    {
+      "nombre": "REVISIT~35s clic → /admin/retenidos",
+      "totalMs": 616,
+      "datosListosMs": 249,
+      "nBackend": 2,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/holds": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/holds"
+      ]
+    },
+    {
+      "nombre": "RECARGA DURA (F5) de /admin/retenidos",
+      "totalMs": 1541,
+      "datosListosMs": 322,
+      "nBackend": 2,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/holds": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/holds"
+      ]
+    },
+    {
+      "nombre": "clic → /kpi (nav principal)",
+      "totalMs": 634,
+      "datosListosMs": 251,
+      "nBackend": 3,
+      "authMe": 1,
+      "datos": {
+        "GET /api/v1/admin/batches": 1,
+        "GET /api/v1/admin/doctor-workload": 1
+      },
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "CLI /api/v1/admin/batches",
+        "CLI /api/v1/admin/doctor-workload"
+      ]
+    },
+    {
+      "nombre": "clic → /admin (volver)",
+      "totalMs": 20378,
+      "datosListosMs": null,
+      "nBackend": 2,
+      "authMe": 2,
+      "datos": {},
+      "secuencia": [
+        "SRV /api/v1/auth/me",
+        "SRV /api/v1/auth/me"
+      ]
+    },
+    {
+      "nombre": "LOGOUT",
+      "totalMs": 520,
+      "datosListosMs": null,
+      "nBackend": 1,
+      "authMe": 0,
+      "datos": {
+        "POST /api/v1/auth/logout": 1
+      },
+      "secuencia": [
+        "CLI /api/v1/auth/logout"
+      ]
+    }
+  ],
+  "storageTrasLogout": {
+    "localStorage": {},
+    "sessionStorage": {},
+    "cookies": []
+  },
+  "mutacionesAbortadas": 0
+}
