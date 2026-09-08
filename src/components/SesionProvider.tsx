@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useCallback } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Rol } from "@/lib/roles";
 import { api } from "@/lib/api";
 
@@ -23,6 +24,8 @@ export interface SesionCliente {
 interface Ctx {
   sesion: SesionCliente;
   cerrarSesion: () => Promise<void>;
+  /** Para que el botón reaccione al instante en vez de quedarse mudo. */
+  cerrandoSesion: boolean;
 }
 
 const SesionCtx = createContext<Ctx | null>(null);
@@ -35,18 +38,45 @@ export function SesionProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
+  /**
+   * CERRAR SESIÓN VACÍA LA CACHÉ, Y ANTES DE NAVEGAR.
+   *
+   * En esta caché vive el expediente clínico de personas identificadas: la
+   * bandeja del médico, los informes que abrió, los retenidos que revisó. Si
+   * sobreviviera al cierre de sesión, el siguiente en entrar en ese mismo
+   * navegador —un turno compartido, un equipo de la subcomisión— vería datos
+   * que no le corresponden mientras se cargan los suyos.
+   *
+   * El orden importa:
+   *   1. `cancelQueries` corta lo que esté en vuelo, para que una respuesta
+   *      tardía no vuelva a sembrar la caché DESPUÉS de vaciarla;
+   *   2. `clear` la vacía entera;
+   *   3. y sólo entonces se navega.
+   */
   const cerrarSesion = useCallback(async () => {
+    setCerrandoSesion(true);
     try {
       await api("/auth/logout", { method: "POST" });
     } catch {
       /* la cookie puede haber expirado; igual mandamos al login */
     }
+    await queryClient.cancelQueries();
+    queryClient.clear();
     router.replace("/login");
+    // El árbol servidor conserva la sesión anterior en su caché de router: sin
+    // esto, volver atrás podría repintar la cabecera con el nombre de quien
+    // acaba de salir.
     router.refresh();
-  }, [router]);
+  }, [queryClient, router]);
 
-  return <SesionCtx.Provider value={{ sesion, cerrarSesion }}>{children}</SesionCtx.Provider>;
+  return (
+    <SesionCtx.Provider value={{ sesion, cerrarSesion, cerrandoSesion }}>
+      {children}
+    </SesionCtx.Provider>
+  );
 }
 
 export function useSesion(): Ctx {

@@ -375,3 +375,31 @@ export const CASE_STATUS_LABEL: Record<string, string> = {
 // Lo que ve el médico sale de `report.document`, que el backend compone ya
 // redactado y sin códigos. Si algún día hace falta traducir un token para una
 // pantalla ADMINISTRATIVA, que viva en esa pantalla y no aquí.
+
+/**
+ * Administración de personas. Vivían dentro de `Usuarios.tsx`; se mueven aquí
+ * porque ahora describen la respuesta de una consulta compartida
+ * (`useAdminUsers` / `useAdminDoctors`) y no el estado local de una pantalla.
+ */
+export type RolBackend = "ADMIN" | "DOCTOR" | "QUALITY";
+export type EstadoUsuario = "PENDING_SETUP" | "ACTIVE" | "INACTIVE";
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  displayName: string;
+  roles: RolBackend[];
+  status: EstadoUsuario;
+  doctorProfileId: string | null;
+  lastLoginAt: string | null;
+}
+
+export interface AdminDoctor {
+  id: string;
+  userId: string;
+  fullName: string;
+  profession: string;
+  nationalId: string | null;
+  professionalCode: string | null;
+  status: "ACTIVE" | "INACTIVE";
+}
