@@ -64,6 +64,45 @@ export interface ManualForm {
   sections: { id: "I" | "II" | "III" | "IV" | "V"; title: string; fields: ManualFormField[] }[];
 }
 
+/**
+ * UN EXPEDIENTE RETENIDO, tal como lo necesita quien decide sobre él.
+ *
+ * Trae DOS diagnósticos que no se mezclan: la RETENCIÓN —por qué la
+ * administración paró el expediente— y el PROCESAMIENTO —en qué quedó el
+ * pipeline técnico—. Son hechos independientes: levantar la retención no
+ * arregla un análisis fallido, y reintentar el análisis no resuelve un
+ * duplicado.
+ */
+export interface HeldCase {
+  holdId: string;
+  caseId: string;
+  externalCaseId: string;
+  hold: CaseHold;
+  detail: string | null;
+  createdAt: string;
+  doctor: { doctorProfileId: string; fullName: string } | null;
+  report: { reportId: string; version: number; workflowStatus: ReportWorkflowStatus | null } | null;
+  processing: {
+    caseStatus: string;
+    failureClass: string | null;
+    attempts: number;
+    lastRun: {
+      runId: string;
+      trigger: string;
+      status: string;
+      errorCode: string | null;
+      errorMessage: string | null;
+      createdAt: string;
+      finishedAt: string | null;
+    } | null;
+  };
+  sourceDocument: { downloadUrl: string } | null;
+  /** Otros expedientes con el MISMO contenido. Pista para investigar, no veredicto. */
+  duplicates: { caseId: string; externalCaseId: string }[];
+  /** Dónde quedaría si la retención se levantara ahora. Lo dice el clasificador. */
+  classificationIfResolved: CaseClassification;
+}
+
 /** Retención activa, tal como la presenta el backend. */
 export interface CaseHold {
   active: true;

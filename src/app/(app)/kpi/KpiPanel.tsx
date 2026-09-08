@@ -9,8 +9,19 @@ import type { Rol } from "@/lib/roles";
 // Resumen. admin/calidad: /admin/batches + /admin/doctor-workload.
 // medico: /inbox — sus casos asignados, contados por estado.
 
-const PENDIENTE_REVISION = new Set(["READY_FOR_REVIEW", "CHANGES_REQUESTED"]);
-const CERRADO = new Set(["APPROVED", "SIGNING", "SIGNED", "SIGNING_FAILED"]);
+/**
+ * EL RESUMEN DEL MÉDICO SALE DE LA CLASIFICACIÓN, no del estado del informe.
+ *
+ * Contaba por `workflowStatus` y repartía los retenidos por ahí: sobre los mismos
+ * 93 expedientes decía «Por revisar 1 · En proceso 2 · Ratificados 90» mientras
+ * su bandeja mostraba «Pendientes 0 · Retenidos 3 · Histórico 90». El expediente
+ * retenido CON informe se colaba en «por revisar» y los dos SIN informe en «en
+ * proceso» — dos sitios donde una retención no está.
+ *
+ * Ahora cada categoría se cuenta una vez y son mutuamente excluyentes, porque la
+ * clasificación lo es.
+ */
+const EN_PROCESO = new Set(["NO_REPORT", "SIGNING"]);
 
 export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: string }) {
   const [batches, setBatches] = useState<BatchListItem[] | null>(null);
@@ -42,20 +53,32 @@ export function KpiPanel({ rol, nombre }: { rol: Rol; nombre: string; contrato: 
   if (rol === "medico") {
     if (!inbox) return <p className="text-sm text-zinc-400">Cargando…</p>;
 
+    const cuantos = (p: (c: OperationalCase) => boolean) => inbox.filter(p).length;
     const asignados = inbox.length;
-    const porRevisar = inbox.filter((c) => c.report && PENDIENTE_REVISION.has(c.report.workflowStatus)).length;
-    const enProceso = inbox.filter((c) => !c.report).length;
-    const ratificados = inbox.filter((c) => c.report && CERRADO.has(c.report.workflowStatus)).length;
+    const porRevisar = cuantos((c) => c.classification === "PENDING_REVIEW");
+    const retenidos = cuantos((c) => c.classification === "HOLD");
+    const enProceso = cuantos((c) => EN_PROCESO.has(c.classification));
+    const ratificados = cuantos((c) => c.classification === "SIGNED");
+    const falloFirma = cuantos((c) => c.classification === "SIGNING_FAILED");
 
     return (
       <div className="space-y-6">
         <p className="text-sm text-zinc-500">Hola, {nombre}. Este es el estado de tus casos.</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* «Asignados a ti» es el TOTAL; el resto lo desglosa sin solaparse.
+            Un retenido cuenta en Retenidos y en ningún otro sitio. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Kpi label="Asignados a ti" valor={asignados} />
           <Kpi label="Por revisar" valor={porRevisar} />
+          <Kpi label="Retenidos" valor={retenidos} />
           <Kpi label="En proceso" valor={enProceso} />
           <Kpi label="Ratificados" valor={ratificados} />
         </div>
+        {/* Sólo si existe: una firma que falló necesita que alguien la vea. */}
+        {falloFirma > 0 && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <Kpi label="Error de firma" valor={falloFirma} />
+          </div>
+        )}
         <Link
           href="/mis-tramites"
           className="inline-block rounded-lg border border-[var(--atm-azul2)] px-4 py-2 text-sm font-semibold text-[var(--atm-azul)] hover:bg-blue-50"
