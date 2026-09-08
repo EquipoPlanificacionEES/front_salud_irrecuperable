@@ -240,11 +240,13 @@ export function Asignaciones() {
           {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
 
           <div className="flex gap-2">
+            {/* Ambos llaman al backend: el botón lo dice mientras tanto, y se
+                bloquea para que no se mande dos veces la misma distribución. */}
             <Btn variante="ghost" onClick={previsualizar} disabled={busy || totalPedido === 0 || !ctx.assignable}>
-              Previsualizar
+              {busy ? "Calculando…" : "Previsualizar"}
             </Btn>
             <Btn onClick={confirmar} disabled={busy || !preview?.valid}>
-              Confirmar distribución
+              {busy ? "Asignando…" : "Confirmar distribución"}
             </Btn>
           </div>
         </>

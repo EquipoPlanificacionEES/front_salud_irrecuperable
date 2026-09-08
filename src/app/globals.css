@@ -30,3 +30,29 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* El punto de «esta pestaña está cargando». Aparece con 150 ms de retraso a
+   propósito: una navegación ya prefetchada se resuelve antes de eso, y un
+   parpadeo en cada clic instantáneo es ruido, no información. */
+.indicador-enlace {
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-left: 0.375rem;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0;
+  animation: indicador-enlace-aparece 200ms ease-out 150ms forwards;
+}
+
+@keyframes indicador-enlace-aparece {
+  to {
+    opacity: 0.7;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicador-enlace {
+    animation-duration: 1ms;
+  }
+}

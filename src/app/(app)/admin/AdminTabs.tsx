@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { EnlaceNav } from "@/components/EnlaceNav";
 
 // Sub-navegación del área de administración. Cada pestaña consume el backend real
 // (/api/v1/admin/*, /api/v1/reports, /api/v1/exports).
@@ -23,7 +23,7 @@ export function AdminTabs() {
       {TABS.map((t) => {
         const activa = pathname.startsWith(t.href);
         return (
-          <Link
+          <EnlaceNav
             key={t.href}
             href={t.href}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
@@ -31,7 +31,7 @@ export function AdminTabs() {
             }`}
           >
             {t.etiqueta}
-          </Link>
+          </EnlaceNav>
         );
       })}
     </nav>

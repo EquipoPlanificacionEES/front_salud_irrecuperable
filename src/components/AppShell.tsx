@@ -1,13 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV } from "@/lib/roles";
+import { EnlaceNav } from "./EnlaceNav";
 import { useSesion } from "./SesionProvider";
 
 // Layout visual compartido (TSI-202) — cabecera + navegación, paleta ATM de la plataforma actual.
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { sesion, cerrarSesion } = useSesion();
+  const { sesion, cerrarSesion, cerrandoSesion } = useSesion();
   const pathname = usePathname();
   const items = NAV.filter((i) => i.roles.includes(sesion.rol));
 
@@ -21,11 +21,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {sesion.contrato ? ` · ${sesion.contrato}` : ""}
           </p>
         </div>
+        {/* Reacciona al instante: cerrar sesión llama al backend, vacía la
+            caché y navega, y antes el botón se quedaba mudo mientras tanto. */}
         <button
           onClick={() => cerrarSesion()}
-          className="rounded-lg border border-[var(--atm-azul2)] px-3 py-1.5 text-sm font-medium text-[var(--atm-azul)] hover:bg-blue-50"
+          disabled={cerrandoSesion}
+          className="rounded-lg border border-[var(--atm-azul2)] px-3 py-1.5 text-sm font-medium text-[var(--atm-azul)] hover:bg-blue-50 disabled:opacity-60"
         >
-          Cerrar sesión
+          {cerrandoSesion ? "Cerrando…" : "Cerrar sesión"}
         </button>
       </header>
 
@@ -33,7 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {items.map((i) => {
           const activa = pathname === i.href || pathname.startsWith(i.href + "/");
           return (
-            <Link
+            <EnlaceNav
               key={i.href}
               href={i.href}
               className={`whitespace-nowrap rounded-t-lg px-3 py-2 text-sm font-medium ${
@@ -43,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }`}
             >
               {i.etiqueta}
-            </Link>
+            </EnlaceNav>
           );
         })}
       </nav>

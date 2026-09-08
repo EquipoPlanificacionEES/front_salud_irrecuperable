@@ -21,6 +21,7 @@ export function Casos() {
   const [quitando, setQuitando] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [moviendo, setMoviendo] = useState<string | null>(null);
 
   // Compartidas con el resumen, informes, asignaciones y reasignación: si otra
   // pantalla las pidió hace poco, aquí no cuestan nada.
@@ -35,8 +36,11 @@ export function Casos() {
   const total = data?.total ?? 0;
   const errorCarga = fallo ? (fallo instanceof ApiFallo ? fallo.message : "No se pudo cargar.") : null;
 
+  /** Qué caso se está moviendo, para bloquear SU selector y no los 93. */
   async function reasignar(caseId: string, doctorProfileId: string) {
+    if (moviendo) return;
     setMsg(null);
+    setMoviendo(caseId);
     try {
       await api(`/admin/cases/${caseId}/assignment`, { method: "PUT", json: { doctorProfileId } });
       setMsg({ ok: true, texto: "Caso reasignado." });
@@ -45,6 +49,8 @@ export function Casos() {
       await invalidar.asignacionesCambiadas();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "Error al reasignar." });
+    } finally {
+      setMoviendo(null);
     }
   }
 
@@ -130,9 +136,12 @@ export function Casos() {
               {c.report?.orientationAssessment ? ORIENTATION_LABEL[c.report.orientationAssessment] : "—"}
             </td>
             <td className="px-4 py-2.5">
+              {/* Se bloquea SÓLO la fila que se está moviendo: bloquear la tabla
+                  entera por un cambio de un caso castiga a los otros 92. */}
               <Select
                 className="w-full min-w-44"
                 value={c.assignment?.doctorProfileId ?? ""}
+                disabled={moviendo === c.caseId}
                 onChange={(e) => e.target.value && reasignar(c.caseId, e.target.value)}
               >
                 <option value="">— sin asignar —</option>
