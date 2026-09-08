@@ -1,13 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import {
-  CASE_STATUS_LABEL,
-  WORKFLOW_LABEL,
-  type DoctorWorkload,
-  type OperationalCase,
-} from "@/lib/backend";
+import { useAdminCases, useDoctorWorkload, useInvalidar } from "@/lib/queries";
+import { CASE_STATUS_LABEL, WORKFLOW_LABEL } from "@/lib/backend";
+import { Refrescando } from "@/components/Skeleton";
 import { Aviso, Btn, Campo, Chip, FilaVacia, Input, Select, Stat, Tabla, Textarea, workflowTono } from "../ui";
 
 // No existe un endpoint de traspaso masivo: el backend solo reasigna caso por caso.
@@ -17,10 +14,7 @@ import { Aviso, Btn, Campo, Chip, FilaVacia, Input, Select, Stat, Tabla, Textare
 //   POST /api/v1/admin/cases/:caseId/assignment/end  {reason}
 
 export function Reasignar() {
-  const [medicos, setMedicos] = useState<DoctorWorkload[]>([]);
   const [origen, setOrigen] = useState("");
-  const [casos, setCasos] = useState<OperationalCase[]>([]);
-  const [cargando, setCargando] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,41 +27,29 @@ export function Reasignar() {
   const [soltando, setSoltando] = useState<string | null>(null);
   const [motivoSoltar, setMotivoSoltar] = useState("");
 
-  const cargarMedicos = useCallback(async () => {
-    try {
-      const d = await api<{ doctors: DoctorWorkload[] }>("/admin/doctor-workload?includeInactive=true");
-      setMedicos(d.doctors);
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudieron cargar los médicos." });
-    }
-  }, []);
-  useEffect(() => {
-    void cargarMedicos();
-  }, [cargarMedicos]);
+  // La carga de los médicos es la MISMA consulta que usan el resumen, casos y
+  // exportaciones: llegar aquí desde cualquiera de ellas no la vuelve a pedir.
+  const { data: medicos = [], error: falloMedicos } = useDoctorWorkload();
+  const invalidar = useInvalidar();
 
-  const cargarCasos = useCallback(async (docId: string) => {
-    if (!docId) {
-      setCasos([]);
-      return;
-    }
-    setCargando(true);
-    try {
-      const q = new URLSearchParams({ doctorProfileId: docId, assignment: "ASSIGNED", limit: "200" });
-      const d = await api<{ cases: OperationalCase[] }>(`/admin/cases?${q}`);
-      setCasos(d.cases);
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudieron cargar los casos." });
-    } finally {
-      setCargando(false);
-    }
-  }, []);
-  useEffect(() => {
-    void cargarCasos(origen);
-  }, [origen, cargarCasos]);
+  /**
+   * Los casos del médico de origen. La dependencia SÍ es real —hasta que no hay
+   * un médico elegido no hay nada que pedir—, así que aquí la cadena es
+   * legítima y `enabled` la expresa. Lo que se evita es pedirlos de nuevo cada
+   * vez que se vuelve al mismo médico dentro de la ventana de frescura.
+   */
+  const filtros = { doctorProfileId: origen || undefined, assignment: "ASSIGNED", limit: 200 };
+  const { data, isFetching } = useAdminCases(filtros, { enabled: Boolean(origen) });
+  const casos = origen ? (data?.cases ?? []) : [];
 
-  async function refrescar() {
-    await Promise.all([cargarMedicos(), cargarCasos(origen)]);
-  }
+  const errorCarga = falloMedicos
+    ? falloMedicos instanceof ApiFallo
+      ? falloMedicos.message
+      : "No se pudieron cargar los médicos."
+    : null;
+
+  /** Tras mover trabajo caduca lo que el movimiento cambió, no toda la caché. */
+  const refrescar = () => invalidar.asignacionesCambiadas();
 
   async function moverUno(caseId: string, doctorProfileId: string) {
     setMsg(null);
@@ -160,7 +142,11 @@ export function Reasignar() {
         </Campo>
       </div>
 
+      {errorCarga && <Aviso ok={false}>{errorCarga}</Aviso>}
       {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
+      <div className="flex justify-end">
+        <Refrescando visible={isFetching} />
+      </div>
 
       {med && (
         <>
@@ -221,8 +207,7 @@ export function Reasignar() {
           )}
 
           <Tabla columnas={["Nº trámite", "Semana", "Estado", "Informe", "Mover a", ""]}>
-            {cargando && <FilaVacia cols={6}>Cargando…</FilaVacia>}
-            {!cargando && casos.length === 0 && <FilaVacia cols={6}>Este médico no tiene casos asignados.</FilaVacia>}
+            {casos.length === 0 && <FilaVacia cols={6}>Este médico no tiene casos asignados.</FilaVacia>}
             {casos.map((c) => (
               <tr key={c.caseId} className="border-t border-[var(--atm-linea)] align-top hover:bg-[var(--atm-fondo)]">
                 <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>

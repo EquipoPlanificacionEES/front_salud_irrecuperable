@@ -57,10 +57,10 @@ export function useDoctorInbox<T = OperationalCase[]>(
   });
 }
 
-export function useSignature(opciones?: { enabled?: boolean }) {
-  return useQuery({
+export function useSignature<T>(opciones?: { enabled?: boolean }) {
+  return useQuery<T>({
     queryKey: queryKeys.doctor.signature(),
-    queryFn: () => api<{ hasSignature: boolean; updatedAt: string | null }>("/doctors/me/signature"),
+    queryFn: () => api<T>("/doctors/me/signature"),
     staleTime: STALE.signature,
     gcTime: GC.corto,
     enabled: opciones?.enabled ?? true,
@@ -216,13 +216,26 @@ export function useAdminDoctors() {
   });
 }
 
-export function useExports(opciones?: { refetchInterval?: number | false }) {
+/** Un trabajo en estos estados todavía se está cociendo. */
+const EXPORT_EN_CURSO = new Set(["PENDING", "PROCESSING"]);
+
+/**
+ * Las exportaciones, con sondeo MIENTRAS haga falta.
+ *
+ * `refetchInterval` mira el resultado actual: si no queda ningún trabajo en
+ * curso, devuelve `false` y el sondeo se para solo. El `setInterval` que había
+ * antes seguía pidiendo el listado cada tres segundos para siempre, aunque todo
+ * estuviera terminado y nadie mirara la pantalla.
+ */
+export function useExports(opciones?: { intervaloMs?: number }) {
+  const intervalo = opciones?.intervaloMs ?? 3000;
   return useQuery({
     queryKey: queryKeys.exports(),
     queryFn: () => api<{ exports: ExportJob[] }>("/exports?limit=50").then((d) => d.exports),
     staleTime: 0,
     gcTime: GC.corto,
-    refetchInterval: opciones?.refetchInterval ?? false,
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((j) => EXPORT_EN_CURSO.has(j.status)) ? intervalo : false,
   });
 }
 

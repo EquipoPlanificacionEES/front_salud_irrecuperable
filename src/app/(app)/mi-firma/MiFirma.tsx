@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
+import { useInvalidar, useSignature } from "@/lib/queries";
 import { useSesion } from "@/components/SesionProvider";
 
 // GET /api/v1/doctors/me/signature   → estado (hay firma, versión, tamaño)
@@ -28,7 +29,6 @@ const MAX_KB = 400;
 export function MiFirma() {
   const { sesion } = useSesion();
   const cacheKey = `firma:${sesion.uid}`;
-  const [estado, setEstado] = useState<Estado | null>(null);
   const [imagenLocal, setImagenLocal] = useState<string | null>(null);
   const [nueva, setNueva] = useState<{ dataUrl: string; file: File } | null>(null);
   const [cambiando, setCambiando] = useState(false);
@@ -37,21 +37,26 @@ export function MiFirma() {
   const [guardando, setGuardando] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
-  async function cargar() {
-    try {
-      setEstado(await api<Estado>("/doctors/me/signature"));
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo cargar." });
-    }
-  }
+  const { data: estadoQuery, error: falloEstado } = useSignature<Estado>();
+  const invalidar = useInvalidar();
+  const estado = estadoQuery ?? null;
+  const errorCarga = falloEstado
+    ? falloEstado instanceof ApiFallo
+      ? falloEstado.message
+      : "No se pudo cargar el estado de tu firma."
+    : null;
+  const cargar = () => invalidar.firmaCambiada();
+
   useEffect(() => {
-    void cargar();
+    // La IMAGEN de la firma sí se guarda en este navegador, y sólo aquí: el
+    // backend no devuelve sus bytes por diseño. Va bajo una clave por usuario y
+    // no es un dato clínico. El ESTADO de la firma viaja por la caché en
+    // memoria, como todo lo demás.
     try {
       setImagenLocal(localStorage.getItem(cacheKey));
     } catch {
       /* sin localStorage */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey]);
 
   function tomarArchivo(f: File | undefined) {
@@ -215,7 +220,10 @@ export function MiFirma() {
               </div>
             )}
 
-            {msg && (
+            {errorCarga && !msg && (
+        <p className="rounded-lg border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-[var(--atm-mal)]">{errorCarga}</p>
+      )}
+      {msg && (
               <p className={`text-sm ${msg.ok ? "text-[var(--atm-ok)]" : "text-[var(--atm-mal)]"}`}>{msg.texto}</p>
             )}
 

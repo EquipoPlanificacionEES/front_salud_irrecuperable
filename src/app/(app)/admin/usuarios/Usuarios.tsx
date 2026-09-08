@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
+import { useAdminDoctors, useAdminUsers, useInvalidar } from "@/lib/queries";
+import { TablaSkeleton } from "@/components/Skeleton";
+import type { AdminDoctor, AdminUser } from "@/lib/backend";
 import { Aviso, Btn, Campo, Chip, FilaVacia, Input, Select, Tabla } from "../ui";
 
 // Administración de cuentas contra el backend real:
@@ -14,24 +17,6 @@ import { Aviso, Btn, Campo, Chip, FilaVacia, Input, Select, Tabla } from "../ui"
 type RolBk = "ADMIN" | "DOCTOR" | "QUALITY";
 type EstadoBk = "PENDING_SETUP" | "ACTIVE" | "INACTIVE";
 
-interface AdminUser {
-  id: string;
-  email: string;
-  displayName: string;
-  roles: RolBk[];
-  status: EstadoBk;
-  doctorProfileId: string | null;
-  lastLoginAt: string | null;
-}
-interface AdminDoctor {
-  id: string;
-  userId: string;
-  fullName: string;
-  profession: string;
-  nationalId: string | null;
-  professionalCode: string | null;
-  status: "ACTIVE" | "INACTIVE";
-}
 interface Fila extends AdminUser {
   doctor?: AdminDoctor;
 }
@@ -44,7 +29,6 @@ const ESTADO: Record<EstadoBk, { texto: string; tono: "ok" | "obs" | "mal" }> = 
 };
 
 export function Usuarios() {
-  const [filas, setFilas] = useState<Fila[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [token, setToken] = useState<{ correo: string; token: string; expira: string } | null>(null);
   const [claveCreada, setClaveCreada] = useState<{ correo: string; password: string } | null>(null);
@@ -71,21 +55,25 @@ export function Usuarios() {
     setNuevo((n) => ({ ...n, password: clave }));
   }
 
-  const cargar = useCallback(async () => {
-    try {
-      const [u, d] = await Promise.all([
-        api<{ users: AdminUser[] }>("/admin/users?limit=200"),
-        api<{ doctors: AdminDoctor[] }>("/admin/doctors?limit=200"),
-      ]);
-      const porUser = new Map(d.doctors.map((x) => [x.userId, x]));
-      setFilas(u.users.map((x) => ({ ...x, doctor: porUser.get(x.id) })));
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo cargar." });
-    }
-  }, []);
-  useEffect(() => {
-    void cargar();
-  }, [cargar]);
+  // Las dos consultas van en paralelo, como antes, pero ahora se comparten y se
+  // cachean cinco minutos: administrar personas es lo más estable que hay aquí.
+  const usuarios = useAdminUsers();
+  const doctores = useAdminDoctors();
+  const invalidar = useInvalidar();
+  const cargar = () => invalidar.usuariosCambiados();
+
+  const filas: Fila[] = useMemo(() => {
+    if (!usuarios.data) return [];
+    const porUser = new Map((doctores.data ?? []).map((x) => [x.userId, x]));
+    return usuarios.data.map((x) => ({ ...x, doctor: porUser.get(x.id) }));
+  }, [usuarios.data, doctores.data]);
+
+  const errorCarga =
+    usuarios.error || doctores.error
+      ? usuarios.error instanceof ApiFallo
+        ? usuarios.error.message
+        : "No se pudo cargar."
+      : null;
 
   async function crearUsuario() {
     setMsg(null);
@@ -181,8 +169,12 @@ export function Usuarios() {
     }
   }
 
+
+  if (usuarios.isPending) return <TablaSkeleton filas={4} columnas={6} />;
+
   return (
     <div className="space-y-5">
+      {errorCarga && <Aviso ok={false}>{errorCarga}</Aviso>}
       <Btn variante={crear ? "neutral" : "primary"} onClick={() => setCrear((v) => !v)}>
         {crear ? "Cancelar" : "Crear usuario"}
       </Btn>

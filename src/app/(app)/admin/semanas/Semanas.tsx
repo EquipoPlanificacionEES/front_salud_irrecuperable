@@ -1,43 +1,41 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { api, ApiFallo } from "@/lib/api";
-import type { BatchListItem } from "@/lib/backend";
+import { useBatches, useInvalidar } from "@/lib/queries";
+import { TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Chip, FilaVacia, Input, Stat, Tabla, batchTono } from "../ui";
 
 // GET/POST /api/v1/admin/batches · POST /api/v1/admin/batches/:id/close|reopen
 
 export function Semanas() {
-  const [items, setItems] = useState<BatchListItem[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [nombre, setNombre] = useState("");
-  const [cargando, setCargando] = useState(true);
+  const [busy, setBusy] = useState(false);
 
-  const cargar = useCallback(async () => {
-    try {
-      const d = await api<{ batches: BatchListItem[] }>("/admin/batches?limit=200");
-      setItems([...d.batches].sort((a, b) => (b.batch.sequence ?? 0) - (a.batch.sequence ?? 0)));
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo cargar." });
-    } finally {
-      setCargando(false);
-    }
-  }, []);
-  useEffect(() => {
-    void cargar();
-  }, [cargar]);
+  // La MISMA consulta que usan casos, informes, asignaciones y el resumen.
+  const { data, error: fallo, isPending } = useBatches();
+  const invalidar = useInvalidar();
+  const items = useMemo(
+    () => (data ? [...data].sort((a, b) => (b.batch.sequence ?? 0) - (a.batch.sequence ?? 0)) : []),
+    [data],
+  );
+  const errorCarga = fallo ? (fallo instanceof ApiFallo ? fallo.message : "No se pudo cargar.") : null;
 
   async function crear() {
-    if (!nombre.trim()) return;
+    if (!nombre.trim() || busy) return;
     setMsg(null);
+    setBusy(true);
     try {
       const r = await api<{ created: boolean }>("/admin/batches", { json: { name: nombre.trim() } });
       setMsg({ ok: true, texto: r.created ? "Semana creada." : "Esa semana ya existía." });
       setNombre("");
-      await cargar();
+      await invalidar.lotesCambiados();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "Error al crear." });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -45,7 +43,7 @@ export function Semanas() {
     setMsg(null);
     try {
       await api(`/admin/batches/${id}/${status === "OPEN" ? "close" : "reopen"}`, { method: "POST" });
-      await cargar();
+      await invalidar.lotesCambiados();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "Error." });
     }
@@ -55,9 +53,12 @@ export function Semanas() {
   const sinAsignar = items.reduce((s, i) => s + i.summary.unassignedCases, 0);
   const casos = items.reduce((s, i) => s + i.summary.totalCases, 0);
 
+  if (isPending) return <TablaSkeleton filas={4} columnas={5} />;
+
   return (
     <div className="space-y-5">
-      {!cargando && items.length > 0 && (
+      {errorCarga && <Aviso ok={false}>{errorCarga}</Aviso>}
+      {items.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Semanas" valor={items.length} />
           <Stat label="Abiertas" valor={abiertas} tono="ok" />
@@ -77,16 +78,15 @@ export function Semanas() {
             onKeyDown={(e) => e.key === "Enter" && crear()}
           />
         </label>
-        <Btn onClick={crear} disabled={!nombre.trim()}>
-          Crear semana
+        <Btn onClick={crear} disabled={!nombre.trim() || busy}>
+          {busy ? "Creando…" : "Crear semana"}
         </Btn>
       </div>
 
       {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
 
       <Tabla columnas={["Semana", "Estado", "Origen", "Casos", "Sin asignar", "Por revisar", "Retenidos", "Firmados", ""]}>
-        {cargando && <FilaVacia cols={9}>Cargando…</FilaVacia>}
-        {!cargando && items.length === 0 && <FilaVacia cols={9}>Sin semanas. Crea la primera.</FilaVacia>}
+        {items.length === 0 && <FilaVacia cols={9}>Sin semanas. Crea la primera.</FilaVacia>}
         {items.map(({ batch, summary }) => (
           <tr key={batch.id} className="border-t border-[var(--atm-linea)] hover:bg-[var(--atm-fondo)]">
             <td className="px-4 py-2.5 font-medium text-zinc-800">{batch.name}</td>

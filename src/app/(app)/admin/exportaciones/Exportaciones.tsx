@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
+import { useBatches, useDoctorWorkload, useExports, useInvalidar } from "@/lib/queries";
 import { ORIENTATION_LABEL, type BatchListItem, type DoctorWorkload, type ExportJob, type Orientation } from "@/lib/backend";
 import { Aviso, Btn, Campo, Chip, EXPORT_LABEL, FilaVacia, Select, Tabla, batchTono, exportTono } from "../ui";
 
@@ -17,40 +18,32 @@ import { Aviso, Btn, Campo, Chip, EXPORT_LABEL, FilaVacia, Select, Tabla, batchT
 const ORIENTACIONES: Orientation[] = ["IRRECOVERABLE", "RECOVERABLE", "INDETERMINATE"];
 
 export function Exportaciones() {
-  const [jobs, setJobs] = useState<ExportJob[]>([]);
-  const [semanas, setSemanas] = useState<BatchListItem[] | null>(null);
-  const [medicos, setMedicos] = useState<DoctorWorkload[]>([]);
   const [fBatch, setFBatch] = useState("");
   const [fMedico, setFMedico] = useState("");
   const [fOrient, setFOrient] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [ultimoId, setUltimoId] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    api<{ batches: BatchListItem[] }>("/admin/batches?limit=200")
-      .then((d) => setSemanas([...d.batches].sort((a, b) => (a.batch.sequence ?? 0) - (b.batch.sequence ?? 0))))
-      .catch(() => setSemanas([]));
-    api<{ doctors: DoctorWorkload[] }>("/admin/doctor-workload?includeInactive=true").then((d) => setMedicos(d.doctors)).catch(() => {});
-  }, []);
+  // Semanas y médicos: las mismas consultas que el resto de administración.
+  const { data: lotes } = useBatches();
+  const { data: medicosData } = useDoctorWorkload();
+  const semanas = useMemo(
+    () => (lotes ? [...lotes].sort((a, b) => (a.batch.sequence ?? 0) - (b.batch.sequence ?? 0)) : []),
+    [lotes],
+  );
+  const medicos = medicosData ?? [];
 
-  const cargar = useCallback(async () => {
-    try {
-      const d = await api<{ exports: ExportJob[] }>("/exports?limit=50");
-      setJobs(d.exports);
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo cargar." });
-    }
-  }, []);
-
-  useEffect(() => {
-    void cargar();
-    timer.current = setInterval(cargar, 3000);
-    return () => {
-      if (timer.current) clearInterval(timer.current);
-    };
-  }, [cargar]);
+  /**
+   * El sondeo lo lleva la propia consulta, no un `setInterval` a mano: así se
+   * detiene solo cuando la pestaña deja de estar visible y no hay temporizador
+   * que limpiar. Se sondea SÓLO mientras haya algo en marcha; con todo
+   * terminado, dejar el intervalo puesto era pedirle al backend un listado cada
+   * tres segundos para siempre.
+   */
+  const { data: jobsData, error: falloJobs } = useExports();
+  const jobs = jobsData ?? [];
+  const invalidar = useInvalidar();
 
   async function generar() {
     setBusy(true);
@@ -66,7 +59,7 @@ export function Exportaciones() {
         ok: true,
         texto: "Exportado y guardado en el servidor. Apenas termine de armarse, descárgalo abajo (fila resaltada).",
       });
-      await cargar();
+      await invalidar.exportacionEncolada();
     } catch (e) {
       const err = e instanceof ApiFallo ? e : null;
       setMsg({
@@ -172,6 +165,7 @@ export function Exportaciones() {
         )}
       </div>
 
+      {falloJobs && <Aviso ok={false}>No se pudo cargar el historial de exportaciones.</Aviso>}
       {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
 
       <div>

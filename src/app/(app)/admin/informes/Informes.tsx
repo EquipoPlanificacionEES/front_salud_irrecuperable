@@ -1,14 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { api, ApiFallo } from "@/lib/api";
-import {
-  ORIENTATION_LABEL,
-  WORKFLOW_LABEL,
-  type BatchListItem,
-  type ReportListItem,
-  type ReportWorkflowStatus,
-} from "@/lib/backend";
+import { useState } from "react";
+import { ApiFallo } from "@/lib/api";
+import { useBatches, useReports } from "@/lib/queries";
+import { ORIENTATION_LABEL, WORKFLOW_LABEL, type ReportWorkflowStatus } from "@/lib/backend";
+import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Chip, FilaVacia, Select, Tabla, workflowTono } from "../ui";
 
 // GET /api/v1/reports?batchId=&workflowStatus=&limit=&offset=
@@ -18,38 +14,23 @@ import { Aviso, Chip, FilaVacia, Select, Tabla, workflowTono } from "../ui";
 const ORDEN: ReportWorkflowStatus[] = ["READY_FOR_REVIEW", "CHANGES_REQUESTED", "APPROVED", "SIGNING", "SIGNED", "SIGNING_FAILED"];
 
 export function Informes() {
-  const [reports, setReports] = useState<ReportListItem[]>([]);
-  const [counts, setCounts] = useState<Partial<Record<ReportWorkflowStatus, number>>>({});
-  const [total, setTotal] = useState(0);
-  const [semanas, setSemanas] = useState<BatchListItem[]>([]);
   const [fBatch, setFBatch] = useState("");
   const [fWf, setFWf] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const [cargando, setCargando] = useState(true);
 
-  useEffect(() => {
-    api<{ batches: BatchListItem[] }>("/admin/batches?limit=200").then((d) => setSemanas(d.batches)).catch(() => {});
-  }, []);
+  // Las semanas las comparten cinco pantallas. Cinco minutos de frescura: un
+  // lote se abre o se cierra a mano, no cambia solo.
+  const { data: semanas = [] } = useBatches();
+  const filtros = { batchId: fBatch || undefined, workflowStatus: fWf || undefined, limit: 100 };
+  const { data, error: fallo, isPending, isFetching } = useReports(filtros);
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
-    const q = new URLSearchParams({ limit: "100" });
-    if (fBatch) q.set("batchId", fBatch);
-    if (fWf) q.set("workflowStatus", fWf);
-    try {
-      const d = await api<{ reports: ReportListItem[]; total: number; countsByWorkflowStatus: Record<string, number> }>(`/reports?${q}`);
-      setReports(d.reports);
-      setTotal(d.total);
-      setCounts(d.countsByWorkflowStatus as Partial<Record<ReportWorkflowStatus, number>>);
-    } catch (e) {
-      setMsg(e instanceof ApiFallo ? e.message : "No se pudo cargar.");
-    } finally {
-      setCargando(false);
-    }
-  }, [fBatch, fWf]);
-  useEffect(() => {
-    void cargar();
-  }, [cargar]);
+  const reports = data?.reports ?? [];
+  const total = data?.total ?? 0;
+  const counts = (data?.countsByWorkflowStatus ?? {}) as Partial<Record<ReportWorkflowStatus, number>>;
+  const msg = fallo ? (fallo instanceof ApiFallo ? fallo.message : "No se pudo cargar.") : null;
+
+  // Cambiar de filtro NO desmonta la tabla: `placeholderData` conserva el
+  // resultado anterior mientras llega el nuevo.
+  if (isPending) return <TablaSkeleton filas={10} columnas={6} />;
 
   return (
     <div className="space-y-5">
@@ -70,7 +51,10 @@ export function Informes() {
             </option>
           ))}
         </Select>
-        <span className="ml-auto text-zinc-400">{total} informe(s)</span>
+        <span className="ml-auto flex items-center gap-3 text-zinc-400">
+          <Refrescando visible={isFetching} />
+          {total} informe(s)
+        </span>
       </div>
 
       {ORDEN.some((w) => counts[w]) && (
@@ -86,8 +70,7 @@ export function Informes() {
       {msg && <Aviso ok={false}>{msg}</Aviso>}
 
       <Tabla columnas={["Nº trámite", "Semana", "Médico", "Versión", "Estado", "Orientación", ""]}>
-        {cargando && <FilaVacia cols={7}>Cargando…</FilaVacia>}
-        {!cargando && reports.length === 0 && (
+        {reports.length === 0 && (
           <FilaVacia cols={7}>Sin informes. Aparecen cuando un caso se procesa.</FilaVacia>
         )}
         {reports.map((r) => (

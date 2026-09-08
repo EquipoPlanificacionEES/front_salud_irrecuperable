@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, ApiFallo } from "@/lib/api";
-import type { AssignmentContext, AssignmentPreview, BatchListItem } from "@/lib/backend";
+import { useAssignmentContext, useBatches, useInvalidar } from "@/lib/queries";
+import type { AssignmentPreview } from "@/lib/backend";
+import { TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Campo, Select, Stat, Tabla } from "../ui";
 
 // GET  /api/v1/admin/batches?status=OPEN
@@ -13,38 +15,56 @@ import { Aviso, Btn, Campo, Select, Stat, Tabla } from "../ui";
 
 export function Asignaciones() {
   const qp = useSearchParams();
-  const [semanas, setSemanas] = useState<BatchListItem[]>([]);
-  const [batchId, setBatchId] = useState<string>("");
-  const [ctx, setCtx] = useState<AssignmentContext | null>(null);
+  const [elegida, setElegida] = useState<string | null>(null);
   const [cant, setCant] = useState<Record<string, number>>({});
   const [preview, setPreview] = useState<AssignmentPreview | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    api<{ batches: BatchListItem[] }>("/admin/batches?status=OPEN&limit=200")
-      .then((d) => {
-        setSemanas(d.batches);
-        const pedido = qp.get("semana");
-        setBatchId(pedido && d.batches.some((b) => b.batch.id === pedido) ? pedido : d.batches[0]?.batch.id ?? "");
-      })
-      .catch((e) => setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudieron cargar las semanas." }));
-  }, [qp]);
+  const { data: semanas = [], error: falloSemanas, isPending: cargandoSemanas } = useBatches({
+    status: "OPEN",
+  });
+  const invalidar = useInvalidar();
 
-  const cargarCtx = useCallback(async (id: string) => {
-    if (!id) return;
+  /**
+   * EL ESLABÓN QUE SOBRABA EN LA CADENA.
+   *
+   * Esta pantalla era la más lenta de administración —576 ms frente a 355 ms de
+   * las demás— porque encadenaba: pedir las semanas, guardar la elegida en
+   * estado, RENDERIZAR, y sólo entonces pedir el contexto de reparto. Ese render
+   * intermedio es un salto entero de ida y vuelta al backend que no hacía falta.
+   *
+   * La semana elegida se DERIVA de las semanas en vez de guardarse: en cuanto
+   * llegan, `batchId` ya tiene valor en ese mismo render y la consulta del
+   * contexto arranca sin esperar a otro. `elegida` sólo existe para cuando la
+   * persona cambia el desplegable a mano.
+   *
+   * Y como las semanas son la MISMA consulta que usan casos, informes y el
+   * resumen, quien llega aquí desde otra pantalla de administración ya las tiene
+   * en caché: entonces no queda ni cadena ni espera.
+   */
+  const pedida = qp.get("semana");
+  const batchId =
+    elegida ??
+    (pedida && semanas.some((b) => b.batch.id === pedida) ? pedida : (semanas[0]?.batch.id ?? ""));
+
+  const { data: ctx, error: falloCtx } = useAssignmentContext(batchId);
+
+  const errorCarga =
+    falloSemanas || falloCtx
+      ? falloSemanas instanceof ApiFallo
+        ? falloSemanas.message
+        : falloCtx instanceof ApiFallo
+          ? falloCtx.message
+          : "No se pudo cargar la semana."
+      : null;
+
+  /** Cambiar de semana descarta la previsualización: era de la anterior. */
+  function elegirSemana(id: string) {
+    setElegida(id);
     setPreview(null);
     setCant({});
-    try {
-      setCtx(await api<AssignmentContext>(`/admin/batches/${id}/assignment-context`));
-    } catch (e) {
-      setCtx(null);
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo cargar la semana." });
-    }
-  }, []);
-  useEffect(() => {
-    void cargarCtx(batchId);
-  }, [batchId, cargarCtx]);
+  }
 
   const allocations = () =>
     Object.entries(cant)
@@ -81,7 +101,9 @@ export function Asignaciones() {
       setMsg({ ok: true, texto: `Distribución confirmada: ${r.assignedCaseCount} caso(s) asignado(s).` });
       setPreview(null);
       setCant({});
-      await cargarCtx(ctx.batch.id);
+      // Repartir trabajo cambia la carga de cada médico, el listado operacional,
+      // el contexto de esta semana y las bandejas. Se caduca eso y nada más.
+      await invalidar.asignacionesCambiadas();
     } catch (e) {
       setMsg({
         ok: false,
@@ -98,11 +120,14 @@ export function Asignaciones() {
 
   const proyeccion = (docId: string) => preview?.allocations.find((a) => a.doctorProfileId === docId);
 
+  if (cargandoSemanas) return <TablaSkeleton filas={3} columnas={5} />;
+
   return (
     <div className="space-y-5">
+      {errorCarga && <Aviso ok={false}>{errorCarga}</Aviso>}
       <div className="rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-sm">
         <Campo label="Semana a repartir" hint="Solo aparecen las semanas abiertas.">
-          <Select className="w-64" value={batchId} onChange={(e) => setBatchId(e.target.value)}>
+          <Select className="w-64" value={batchId} onChange={(e) => elegirSemana(e.target.value)}>
             {semanas.length === 0 && <option value="">— sin semanas abiertas —</option>}
             {semanas.map(({ batch }) => (
               <option key={batch.id} value={batch.id}>

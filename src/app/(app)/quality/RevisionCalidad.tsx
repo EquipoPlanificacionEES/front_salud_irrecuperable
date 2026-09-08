@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import { ORIENTATION_LABEL, WORKFLOW_LABEL, type ReportListItem, type ReportWorkflowStatus } from "@/lib/backend";
+import { useInvalidar, useReports } from "@/lib/queries";
+import { ORIENTATION_LABEL, WORKFLOW_LABEL, type ReportWorkflowStatus } from "@/lib/backend";
+import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 
 // GET  /api/v1/reports                                       → informes del contrato
 // POST /api/v1/reports/:reportId/return-to-doctor {reason}   → devolver al médico asignado
@@ -24,28 +26,18 @@ const CHIP: Record<ReportWorkflowStatus, string> = {
 };
 
 export function RevisionCalidad() {
-  const [reports, setReports] = useState<ReportListItem[]>([]);
+  // Estado de interfaz: la pestaña elegida y lo que se está escribiendo.
   const [tab, setTab] = useState<Pestaña>("ratificados");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
-  const [cargando, setCargando] = useState(true);
   const [devolviendo, setDevolviendo] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
-    try {
-      const d = await api<{ reports: ReportListItem[] }>("/reports?limit=200");
-      setReports(d.reports);
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo cargar." });
-    } finally {
-      setCargando(false);
-    }
-  }, []);
-  useEffect(() => {
-    void cargar();
-  }, [cargar]);
+  // Las tres pestañas salen de ESTA lista: cambiar de pestaña no pide nada.
+  const { data, error: fallo, isPending, isFetching } = useReports({ limit: 200 });
+  const invalidar = useInvalidar();
+  const reports = data?.reports ?? [];
+  const errorCarga = fallo ? (fallo instanceof ApiFallo ? fallo.message : "No se pudo cargar.") : null;
 
   const filtrados = reports.filter((r) =>
     tab === "todos"
@@ -73,7 +65,9 @@ export function RevisionCalidad() {
       setMsg({ ok: true, texto: `Devuelto al médico. Se abrió la versión ${r.newVersion} para su corrección.` });
       setDevolviendo(null);
       setMotivo("");
-      await cargar();
+      // Devolver un informe lo saca del circuito de calidad y lo devuelve a la
+      // bandeja del médico: caduca el listado y esa bandeja, nada más.
+      await invalidar.informeDevuelto();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo devolver." });
     } finally {
@@ -81,11 +75,21 @@ export function RevisionCalidad() {
     }
   }
 
+  if (isPending) return <TablaSkeleton filas={8} columnas={5} />;
+
   return (
     <div className="space-y-4">
-      <p className="text-sm text-zinc-500">
-        Revisa los informes ratificados por los médicos. Si algo no cuadra, devuélvelo para corrección.
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-zinc-500">
+          Revisa los informes ratificados por los médicos. Si algo no cuadra, devuélvelo para corrección.
+        </p>
+        <Refrescando visible={isFetching} />
+      </div>
+      {errorCarga && (
+        <p className="rounded-lg border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-[var(--atm-mal)]">
+          {errorCarga}
+        </p>
+      )}
 
       <div className="flex rounded-lg border border-[var(--atm-linea)] bg-white p-0.5">
         {(
@@ -129,10 +133,7 @@ export function RevisionCalidad() {
             </tr>
           </thead>
           <tbody>
-            {cargando && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-zinc-400">Cargando…</td></tr>
-            )}
-            {!cargando && filtrados.length === 0 && (
+            {filtrados.length === 0 && (
               <tr><td colSpan={5} className="px-4 py-10 text-center text-zinc-400">Sin informes en esta vista.</td></tr>
             )}
             {filtrados.map((r) => (

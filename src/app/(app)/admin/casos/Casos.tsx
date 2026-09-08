@@ -1,15 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import {
-  CASE_STATUS_LABEL,
-  ORIENTATION_LABEL,
-  WORKFLOW_LABEL,
-  type BatchListItem,
-  type DoctorWorkload,
-  type OperationalCase,
-} from "@/lib/backend";
+import { useAdminCases, useBatches, useDoctorWorkload, useInvalidar } from "@/lib/queries";
+import { CASE_STATUS_LABEL, ORIENTATION_LABEL, WORKFLOW_LABEL } from "@/lib/backend";
+import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Chip, FilaVacia, Select, Stat, Tabla, Textarea, workflowTono } from "../ui";
 
 // GET  /api/v1/admin/cases?batchId=&assignment=&status=&limit=&offset=
@@ -18,48 +13,36 @@ import { Aviso, Btn, Chip, FilaVacia, Select, Stat, Tabla, Textarea, workflowTon
 // POST /api/v1/admin/cases/:id/assignment/end   {reason}   ← el motivo es OBLIGATORIO
 
 export function Casos() {
-  const [casos, setCasos] = useState<OperationalCase[]>([]);
-  const [total, setTotal] = useState(0);
-  const [semanas, setSemanas] = useState<BatchListItem[]>([]);
-  const [medicos, setMedicos] = useState<DoctorWorkload[]>([]);
+  // Filtros: estado de INTERFAZ. Entran en la clave de la consulta, así que dos
+  // combinaciones distintas no se pisan en la caché.
   const [fBatch, setFBatch] = useState("");
   const [fAsig, setFAsig] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
-  const [cargando, setCargando] = useState(true);
   const [quitando, setQuitando] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    api<{ batches: BatchListItem[] }>("/admin/batches?limit=200").then((d) => setSemanas(d.batches)).catch(() => {});
-    api<{ doctors: DoctorWorkload[] }>("/admin/doctor-workload?includeInactive=true").then((d) => setMedicos(d.doctors)).catch(() => {});
-  }, []);
+  // Compartidas con el resumen, informes, asignaciones y reasignación: si otra
+  // pantalla las pidió hace poco, aquí no cuestan nada.
+  const { data: semanas = [] } = useBatches();
+  const { data: medicos = [] } = useDoctorWorkload();
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
-    const q = new URLSearchParams({ limit: "100" });
-    if (fBatch) q.set("batchId", fBatch);
-    if (fAsig) q.set("assignment", fAsig);
-    try {
-      const d = await api<{ cases: OperationalCase[]; total: number }>(`/admin/cases?${q}`);
-      setCasos(d.cases);
-      setTotal(d.total);
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo cargar." });
-    } finally {
-      setCargando(false);
-    }
-  }, [fBatch, fAsig]);
-  useEffect(() => {
-    void cargar();
-  }, [cargar]);
+  const filtros = { batchId: fBatch || undefined, assignment: fAsig || undefined, limit: 100 };
+  const { data, error: fallo, isPending, isFetching } = useAdminCases(filtros);
+  const invalidar = useInvalidar();
+
+  const casos = data?.cases ?? [];
+  const total = data?.total ?? 0;
+  const errorCarga = fallo ? (fallo instanceof ApiFallo ? fallo.message : "No se pudo cargar.") : null;
 
   async function reasignar(caseId: string, doctorProfileId: string) {
     setMsg(null);
     try {
       await api(`/admin/cases/${caseId}/assignment`, { method: "PUT", json: { doctorProfileId } });
       setMsg({ ok: true, texto: "Caso reasignado." });
-      await cargar();
+      // Mover un caso cambia la carga del médico que lo pierde y la del que lo
+      // gana, el listado, el contexto de reparto de esa semana y la bandeja.
+      await invalidar.asignacionesCambiadas();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "Error al reasignar." });
     }
@@ -77,7 +60,7 @@ export function Casos() {
       setMsg({ ok: true, texto: "Asignación retirada. El caso queda sin médico responsable." });
       setQuitando(null);
       setMotivo("");
-      await cargar();
+      await invalidar.asignacionesCambiadas();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo retirar la asignación." });
     } finally {
@@ -87,8 +70,15 @@ export function Casos() {
 
   const asignados = casos.filter((c) => c.assignment).length;
 
+  // Primera carga: esqueleto. Al cambiar de filtro la tabla NO se desmonta:
+  // `placeholderData` conserva el resultado anterior mientras llega el nuevo, y
+  // el punto de «Actualizando…» dice que está en marcha. Antes desaparecía
+  // entera y volvía a aparecer, con 93 filas de salto de layout.
+  if (isPending) return <TablaSkeleton filas={10} columnas={7} />;
+
   return (
     <div className="space-y-5">
+      {errorCarga && <Aviso ok={false}>{errorCarga}</Aviso>}
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Casos (filtro actual)" valor={total} />
         <Stat label="Con médico" valor={asignados} tono="ok" />
@@ -109,13 +99,17 @@ export function Casos() {
           <option value="ASSIGNED">Solo asignadas</option>
           <option value="UNASSIGNED">Solo sin asignar</option>
         </Select>
+        {/* Al cambiar de filtro la tabla de abajo sigue en pantalla con el
+            resultado anterior. Esto dice que ya viene el nuevo. */}
+        <span className="ml-auto">
+          <Refrescando visible={isFetching} />
+        </span>
       </div>
 
       {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
 
       <Tabla columnas={["Nº trámite", "Semana", "Estado", "Informe", "Orientación", "Médico responsable", ""]}>
-        {cargando && <FilaVacia cols={7}>Cargando…</FilaVacia>}
-        {!cargando && casos.length === 0 && (
+        {casos.length === 0 && (
           <FilaVacia cols={7}>Sin casos. Llegan cuando el bot procesa una semana.</FilaVacia>
         )}
         {casos.map((c) => (

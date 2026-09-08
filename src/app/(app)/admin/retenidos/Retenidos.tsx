@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
+import { useHolds, useInvalidar } from "@/lib/queries";
 import { CASE_STATUS_LABEL, type HeldCase } from "@/lib/backend";
+import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Campo, Chip, FilaVacia, Tabla, Textarea } from "../ui";
 
 /**
@@ -44,25 +46,21 @@ function consecuencia(caso: HeldCase): string {
 }
 
 export function Retenidos() {
-  const [casos, setCasos] = useState<HeldCase[] | null>(null);
+  const { data: casos, error: fallo, isPending, isFetching } = useHolds();
+  const invalidar = useInvalidar();
+
+  // Estado de interfaz: qué fila está desplegada y qué lleva escrito.
   const [abierto, setAbierto] = useState<string | null>(null);
   const [nota, setNota] = useState("");
   const [reprocesar, setReprocesar] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const cargar = useCallback(async () => {
-    try {
-      const d = await api<{ holds: HeldCase[] }>("/admin/holds");
-      setCasos(d.holds);
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudieron cargar las retenciones." });
-      setCasos([]);
-    }
-  }, []);
-  useEffect(() => {
-    void cargar();
-  }, [cargar]);
+  const errorCarga = fallo
+    ? fallo instanceof ApiFallo
+      ? fallo.message
+      : "No se pudieron cargar las retenciones."
+    : null;
 
   function abrir(caso: HeldCase) {
     setAbierto(caso.holdId);
@@ -83,8 +81,16 @@ export function Retenidos() {
         { json: { resolutionNote: nota.trim(), ...(reprocesar ? { reprocess: true } : {}) } },
       );
       setAbierto(null);
-      // Se recarga la lista: la retención resuelta desaparece de ella.
-      await cargar();
+      /**
+       * Caduca lo que levantar una retención cambia de verdad: la lista de
+       * retenidos —de la que este expediente desaparece—, el listado
+       * operacional, el informe del caso y la bandeja del médico, que vuelve a
+       * recibirlo si tenía informe.
+       *
+       * Antes esto era «recarga la lista»: correcto para esta pantalla y ciego
+       * para las otras cuatro, que seguían enseñando el estado anterior.
+       */
+      await invalidar.retencionResuelta(caso.caseId);
       setMsg({
         ok: true,
         texto:
@@ -111,16 +117,24 @@ export function Retenidos() {
     }
   }
 
+  // Primera carga: esqueleto. Un refresco posterior mantiene la tabla.
+  if (isPending) return <TablaSkeleton filas={3} columnas={6} />;
+
   return (
     <div className="space-y-4">
       {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
+      {errorCarga && <Aviso ok={false}>{errorCarga}</Aviso>}
+      <div className="flex justify-end">
+        <Refrescando visible={isFetching && !isPending} />
+      </div>
 
       <Tabla columnas={["Trámite", "Retención", "Procesamiento", "Informe", "Médico", ""]}>
-        {casos === null && <FilaVacia cols={6}>Cargando…</FilaVacia>}
         {casos?.length === 0 && <FilaVacia cols={6}>No hay expedientes retenidos.</FilaVacia>}
         {casos?.map((c) => (
-          <>
-            <tr key={c.holdId} className="border-t border-[var(--atm-linea)]">
+          // `Fragment` con clave: sin ella React avisa en cada render de que las
+          // filas de esta tabla no tienen identidad estable.
+          <Fragment key={c.holdId}>
+            <tr className="border-t border-[var(--atm-linea)]">
               <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>
               <td className="px-4 py-2.5">
                 <Chip tono="obs">{MOTIVO_LEGIBLE[c.hold.reason ?? ""] ?? "Retenido"}</Chip>
@@ -159,7 +173,7 @@ export function Retenidos() {
             </tr>
 
             {abierto === c.holdId && (
-              <tr key={`${c.holdId}-detalle`} className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
+              <tr className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
                 <td colSpan={6} className="px-4 py-4">
                   <div className="space-y-3">
                     <dl className="grid grid-cols-1 gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
@@ -230,7 +244,7 @@ export function Retenidos() {
                 </td>
               </tr>
             )}
-          </>
+          </Fragment>
         ))}
       </Tabla>
     </div>
