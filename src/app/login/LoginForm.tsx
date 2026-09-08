@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { HOME_POR_ROL, rolPrincipal } from "@/lib/roles";
 
 // TSI-203 — Login UI. email + password contra POST /api/v1/auth/login del backend.
 // El backend valida y setea las cookies `sir_session` (HttpOnly) + `sir_csrf`.
@@ -25,15 +26,33 @@ export default function LoginForm({ next }: { next?: string }) {
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         setError(data?.error?.message ?? "No se pudo iniciar sesión.");
+        setCargando(false);
         return;
       }
-      // A "/" y el layout raíz manda a cada rol a su área (HOME_POR_ROL).
-      const destino = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+      /**
+       * SE VA DIRECTO AL DESTINO FINAL.
+       *
+       * Antes se navegaba a "/" y se dejaba que el servidor averiguara el rol y
+       * redirigiera, y encima se llamaba a `router.refresh()`. Eran tres renders
+       * de servidor —tres verificaciones de sesión contra el backend— para llegar
+       * a una pantalla cuyo destino ya venía en esta misma respuesta.
+       *
+       * `POST /auth/login` devuelve `user.roles`. Con eso se resuelve el destino
+       * aquí y se navega una sola vez. No es una decisión de autorización: la
+       * guardia del servidor vuelve a validar al renderizar, y si el rol no
+       * corresponde redirige. Esto sólo evita el rodeo.
+       */
+      const cuerpo = (await res.json().catch(() => null)) as { user?: { roles?: string[] } } | null;
+      const rol = rolPrincipal(cuerpo?.user?.roles);
+      const destino =
+        next && next.startsWith("/") && !next.startsWith("//")
+          ? next
+          : rol
+            ? HOME_POR_ROL[rol]
+            : "/";
       router.replace(destino);
-      router.refresh();
     } catch {
       setError("Error de red. Intenta de nuevo.");
-    } finally {
       setCargando(false);
     }
   }

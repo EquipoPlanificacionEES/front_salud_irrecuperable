@@ -1,22 +1,28 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
-import type { Rol } from "./roles";
+import { rolPrincipal, type Rol } from "./roles";
 
 // La sesión la maneja el backend real: cookie opaca `sir_session` (HttpOnly) +
 // `sir_csrf`. El front NO verifica ningún token: pregunta a `/api/v1/auth/me`
-// con la cookie y, si responde 200, hay sesión. Sirve en Edge (middleware) y en
-// Node (server components) porque solo usa `fetch`.
+// con la cookie y, si responde 200, hay sesión.
+//
+// UNA SOLA VERIFICACIÓN POR PETICIÓN.
+//
+// Antes cada render preguntaba tres veces: el middleware, el layout protegido y
+// la página. Medido: 11 llamadas por login de médico, 28 por el de admin, 23 por
+// recarga de una pantalla administrativa —cada una un viaje de ~197 ms a Render—
+// porque además el prefetch de `<Link>` repite el render entero por cada enlace.
+//
+// `cache()` de React memoiza POR PETICIÓN. No es una caché compartida: React crea
+// un ámbito nuevo para cada request y lo descarta al terminarla, así que dos
+// usuarios simultáneos nunca ven el mismo valor y una sesión revocada no
+// sobrevive a la petición en curso. Es exactamente lo que hacía falta: el layout
+// y la página comparten la respuesta, sin relajar nada.
 
 export const COOKIE_SESION = "sir_session";
 export const COOKIE_CSRF = "sir_csrf";
 
 const BACKEND = (process.env.BACKEND_URL ?? "").replace(/\/$/, "");
-
-// El backend habla ADMIN/DOCTOR/QUALITY; el resto del front habla medico/calidad/admin.
-const MAPA_ROL: Record<string, Rol> = {
-  ADMIN: "admin",
-  DOCTOR: "medico",
-  QUALITY: "calidad",
-};
 
 export interface Sesion {
   uid: string;
@@ -48,7 +54,7 @@ export async function verificarSesion(sirSession: string | undefined): Promise<S
     });
     if (!r.ok) return null;
     const u = (await r.json()) as MeResponse;
-    const roles = (u.roles ?? []).map((x) => MAPA_ROL[x]).filter(Boolean) as Rol[];
+    const roles = (u.roles ?? []).map((x) => rolPrincipal([x])).filter((x): x is Rol => x !== null);
     if (roles.length === 0) return null;
     return {
       uid: u.userId,
@@ -65,8 +71,13 @@ export async function verificarSesion(sirSession: string | undefined): Promise<S
   }
 }
 
-/** Lee y verifica la sesión desde la cookie (Server Components / route handlers). */
-export async function obtenerSesion(): Promise<Sesion | null> {
+/**
+ * Lee y verifica la sesión desde la cookie (Server Components / route handlers).
+ *
+ * Memoizada por petición: llamarla N veces durante un mismo render hace UNA
+ * llamada al backend. Ver la nota de arriba.
+ */
+export const obtenerSesion = cache(async function obtenerSesion(): Promise<Sesion | null> {
   const valor = (await cookies()).get(COOKIE_SESION)?.value;
   return verificarSesion(valor);
-}
+});
