@@ -3,7 +3,7 @@ import { cleanup, screen, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { Envoltura, crearQueryClient, pintarConQuery } from "@/test/utils";
 import { queryKeys, STALE } from "@/lib/query-keys";
-import { invalidacionesDe } from "@/lib/queries";
+import { invalidacionesDe, precalentar } from "@/lib/queries";
 import { KpiPanel } from "@/app/(app)/kpi/KpiPanel";
 import { Bandeja } from "@/app/(app)/mis-tramites/Bandeja";
 import { Casos } from "@/app/(app)/admin/casos/Casos";
@@ -414,5 +414,77 @@ describe("la ficha con la bandeja ya en caché", () => {
 
     await waitFor(() => expect(screen.getByText(/contenido del informe/)).toBeDefined());
     expect(screen.queryByText(/todavía no tiene informe/i)).toBeNull();
+  });
+});
+
+/**
+ * LA MIGRACIÓN DE `prefetchQuery` A `query()`.
+ *
+ * `prefetchQuery` estaba obsoleta en 5.102 y desaparece en la 6. Su
+ * implementación era `fetchQuery(options).then(noop).catch(noop)`: devolvía
+ * nada y se tragaba el error. `query()` NO se lo traga —rechaza la promesa—,
+ * así que la mitad frágil del cambio es el `catch`.
+ *
+ * Sin él, cada vez que el ratón pasa por una fila cuyo informe falla habría un
+ * rechazo sin capturar. Esto lo fija.
+ */
+describe("precalentar (sustituto de prefetchQuery)", () => {
+  it("deja el dato en la caché, igual que antes", async () => {
+    const client = crearQueryClient();
+    precalentar(client, {
+      queryKey: queryKeys.cases.report("caso-precalentado"),
+      queryFn: () => Promise.resolve({ id: "informe" }),
+      staleTime: 5_000,
+    });
+    await waitFor(() =>
+      expect(client.getQueryData(queryKeys.cases.report("caso-precalentado"))).toEqual({
+        id: "informe",
+      }),
+    );
+  });
+
+  it("ADJUNTA un manejador de error a la promesa", () => {
+    /**
+     * Se comprueba la composición y no el síntoma, y es deliberado: la versión
+     * de esta prueba que escuchaba `unhandledrejection` pasaba IGUAL sin el
+     * `catch`, porque jsdom no propaga ese evento. Una prueba que no falla con
+     * el defecto puesto no prueba nada.
+     *
+     * Esto sí falla: si alguien quita el `.catch()`, `capturado` queda en false.
+     */
+    let capturado = false;
+    const falso = {
+      query: () => ({
+        catch: () => {
+          capturado = true;
+          return Promise.resolve();
+        },
+      }),
+    } as unknown as QueryClient;
+
+    precalentar(falso, { queryKey: ["x"], queryFn: () => Promise.resolve(1) });
+    expect(capturado).toBe(true);
+  });
+
+  it("un prefetch que falla no rompe nada ni deja el dato a medias", async () => {
+    const client = crearQueryClient();
+    expect(() =>
+      precalentar(client, {
+        queryKey: queryKeys.cases.report("caso-que-falla"),
+        queryFn: () => Promise.reject(new Error("el informe ya no está")),
+      }),
+    ).not.toThrow();
+
+    await new Promise((r) => setTimeout(r, 60));
+    expect(client.getQueryData(queryKeys.cases.report("caso-que-falla"))).toBeUndefined();
+  });
+
+  it("devuelve void: quien precalienta no espera el dato", () => {
+    const client = crearQueryClient();
+    const r = precalentar(client, {
+      queryKey: queryKeys.cases.report("x"),
+      queryFn: () => Promise.resolve(1),
+    });
+    expect(r).toBeUndefined();
   });
 });

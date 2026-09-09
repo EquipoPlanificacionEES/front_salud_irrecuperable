@@ -90,6 +90,28 @@ export function useCaseReport<T>(caseId: string, opciones?: { enabled?: boolean 
 }
 
 /**
+ * CALENTAR LA CACHÉ SIN QUE UN FALLO MOLESTE A NADIE.
+ *
+ * Sustituye a `prefetchQuery`, que en la 5.102 está marcada como obsoleta y
+ * desaparece en la 6. La equivalencia es exacta y no es una interpretación: la
+ * implementación de `prefetchQuery` ERA `fetchQuery(options).then(noop).catch(noop)`,
+ * y `query()` es `fetchQuery()` con un `select` opcional que aquí no se usa.
+ *
+ * El `catch` es la mitad que hay que conservar. `query()` rechaza la promesa, y
+ * un prefetch que revienta —la red se cayó, el informe ya no está— no es un
+ * error de nadie: quien de verdad necesite el dato lo pedirá con su consulta y
+ * verá el fallo entonces, en su sitio. Sin esto habría rechazos sin capturar
+ * cada vez que el ratón pasa por una fila.
+ */
+type OpcionesDeConsulta = Parameters<QueryClient["query"]>[0];
+
+export function precalentar(qc: QueryClient, opciones: OpcionesDeConsulta): void {
+  void qc.query(opciones).catch(() => {
+    /* deliberado: ver arriba */
+  });
+}
+
+/**
  * Prefetch del informe. Se llama al pasar el ratón o al enfocar una fila.
  *
  * NO se prefetchan los 93 informes de la bandeja: serían 93 peticiones para
@@ -98,7 +120,7 @@ export function useCaseReport<T>(caseId: string, opciones?: { enabled?: boolean 
 export function usePrefetchCaseReport() {
   const qc = useQueryClient();
   return (caseId: string) =>
-    void qc.prefetchQuery({
+    precalentar(qc, {
       queryKey: queryKeys.cases.report(caseId),
       queryFn: () => api(`/cases/${caseId}/report`),
       // La MISMA frescura que la consulta que lo va a consumir. Con una distinta,

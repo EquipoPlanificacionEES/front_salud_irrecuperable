@@ -318,7 +318,10 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     // Se pide el formulario ANTES de abrirlo: sin él no se sabe qué cifras
     // ofrecer ni cuáles el sistema no pudo establecer.
     try {
-      const f = await qc.fetchQuery({
+      // `query()` y no `fetchQuery()`: la segunda está obsoleta desde la 5.102
+      // y desaparece en la 6. Misma implementación, mismo rechazo en caso de
+      // error —que es lo que recoge el `catch` de abajo—.
+      const f = await qc.query({
         queryKey: queryKeys.cases.manualForm(rep.id),
         queryFn: () => api<ManualForm>(`/reports/${rep.id}/manual-form`),
         staleTime: 0,
