@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCaseReport, useDoctorInbox, useInvalidar } from "@/lib/queries";
 import { queryKeys } from "@/lib/query-keys";
@@ -315,6 +315,16 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const [borrador, setBorrador] = useState<Borrador>({ valores: {}, motivo: "", nota: "" });
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * SALIR DEL EDITOR CON TRABAJO SIN GUARDAR TIENE QUE COSTAR UN PASO.
+   *
+   * «Cancelar» descartaba en silencio lo escrito. Quien corrige un
+   * expediente largo puede llevar diez campos revisados contra el PDF
+   * original, y ese trabajo no se puede perder por pulsar el botón de al
+   * lado del de confirmar. No se usa `window.confirm`: un diálogo nativo
+   * no dice cuántos campos se pierden, y esto sí.
+   */
+  const [confirmandoDescarte, setConfirmandoDescarte] = useState(false);
 
   /** Vuelve a pedir el informe y devuelve el vigente. Lo usan las dos mutaciones. */
   const cargar = useCallback(async (): Promise<Report | null> => {
@@ -358,6 +368,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
      * Y la nota empieza vacía porque es suya.
      */
     setMsg(null);
+    setConfirmandoDescarte(false);
     setModo(destino);
   }
 
@@ -438,6 +449,30 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const cambios = camposModificados(form, borrador);
   const faltaMotivo = exigeMotivo(form, borrador) && borrador.motivo.trim().length < 10;
   const cuerpoListo = cuerpoDeCorreccion(form, borrador) !== null;
+  const hayTrabajoSinGuardar =
+    modo !== "ver" && (cambios.length > 0 || borrador.motivo.trim() !== "" || borrador.nota.trim() !== "");
+
+  /**
+   * Y si el navegador se cierra o se recarga, que el propio navegador avise.
+   * Sólo cubre la salida REAL de la página: una navegación interna del router
+   * no dispara este evento, y eso queda pendiente.
+   */
+  useEffect(() => {
+    if (!hayTrabajoSinGuardar) return;
+    const avisar = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", avisar);
+    return () => window.removeEventListener("beforeunload", avisar);
+  }, [hayTrabajoSinGuardar]);
+
+  /** Sale del editor. Con trabajo escrito, primero pregunta. */
+  function salirDelEditor() {
+    if (hayTrabajoSinGuardar && !confirmandoDescarte) {
+      setConfirmandoDescarte(true);
+      return;
+    }
+    setConfirmandoDescarte(false);
+    setModo("ver");
+  }
 
   async function ratificar() {
     if (!rep) return;
@@ -790,9 +825,35 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       {puedeActuar && (
         <div className="fixed inset-x-0 bottom-4 z-20 mx-auto w-full max-w-5xl px-6">
         <div className="rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-lg">
-          {editando ? (
+          {editando && confirmandoDescarte ? (
+            /* EL PASO QUE FALTABA. Dice QUÉ se pierde antes de perderlo, y deja
+               la salida y la vuelta a la misma distancia. */
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-zinc-700">
+                Vas a descartar{" "}
+                <strong>
+                  {cambios.length} campo{cambios.length === 1 ? "" : "s"}
+                </strong>{" "}
+                sin guardar. No se puede deshacer.
+              </p>
+              <div className="ml-auto flex gap-2">
+                <button
+                  onClick={() => setConfirmandoDescarte(false)}
+                  className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)]"
+                >
+                  Seguir editando
+                </button>
+                <button
+                  onClick={salirDelEditor}
+                  className="rounded-lg border border-[var(--atm-mal)] px-4 py-2 text-sm font-medium text-[var(--atm-mal)] hover:bg-red-50"
+                >
+                  Descartar cambios
+                </button>
+              </div>
+            </div>
+          ) : editando ? (
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => setModo("ver")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
+              <button onClick={salirDelEditor} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
                 Cancelar
               </button>
               {/* CONFIRMAR ES EL MISMO ACTO QUE ABRIÓ EL FORMULARIO. Desde

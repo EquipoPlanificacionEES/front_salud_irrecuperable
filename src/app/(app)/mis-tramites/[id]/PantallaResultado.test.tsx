@@ -1137,3 +1137,93 @@ describe("PantallaResultado · formulario estructurado", () => {
     expect(screen.getAllByRole("radio")).toHaveLength(2);
   });
 });
+
+describe("PantallaResultado · salir con trabajo sin guardar", () => {
+  /**
+   * G · «Cancelar» descartaba en silencio lo escrito.
+   *
+   * Quien corrige un expediente largo puede llevar diez campos contrastados
+   * contra el PDF original. Ese trabajo no se puede perder por pulsar el botón
+   * que está al lado del de confirmar.
+   */
+  function conTodasLasSecciones(base: ReturnType<typeof informe>) {
+    return {
+      ...base,
+      proposal: { recoverableChecked: false, irrecoverableChecked: false, unresolvedNote: null },
+      document: {
+        ...base.document,
+        sections: [
+          { id: "I", title: "I. IDENTIFICACIÓN DEL USUARIO", fields: [], paragraphs: [] },
+          ...base.document.sections,
+          { id: "III", title: "III. ANÁLISIS DE ANTECEDENTES CLÍNICOS", fields: [], paragraphs: [] },
+          { id: "V", title: "V. PROPUESTA DE EVALUACIÓN DE SALUD", fields: [], paragraphs: [] },
+        ],
+      },
+    };
+  }
+
+  async function abrirFormulario() {
+    vi.stubGlobal("fetch", fetchDevolviendo(conTodasLasSecciones(informe(SIN_PROPUESTA))));
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+    await abrirEditor(RATIFICAR);
+  }
+
+  const cancelar = () => fireEvent.click(screen.getByRole("button", { name: /^cancelar$/i }));
+
+  it("sin nada escrito, cancelar sale directamente: no estorba al que no perdió nada", async () => {
+    await abrirFormulario();
+    cancelar();
+
+    await waitFor(() => expect(screen.queryByLabelText(/Conclusión general/)).toBeNull());
+    expect(screen.queryByText(/Descartar cambios/)).toBeNull();
+  });
+
+  it("con algo escrito, cancelar PREGUNTA en vez de descartar", async () => {
+    await abrirFormulario();
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
+      target: { value: "Conclusión que costó media hora de expediente." },
+    });
+    cancelar();
+
+    // No se ha salido: se pide confirmación, y se dice qué se pierde.
+    expect(screen.getByText(/No se puede deshacer/)).toBeDefined();
+    expect(screen.getByRole("button", { name: /descartar cambios/i })).toBeDefined();
+    expect(screen.getByLabelText(/Conclusión general/)).toBeDefined();
+  });
+
+  it("«Seguir editando» vuelve al formulario con lo escrito intacto", async () => {
+    await abrirFormulario();
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
+      target: { value: "Texto que no se puede perder." },
+    });
+    cancelar();
+    fireEvent.click(screen.getByRole("button", { name: /seguir editando/i }));
+
+    expect((screen.getByLabelText(/Conclusión general/) as HTMLTextAreaElement).value).toBe(
+      "Texto que no se puede perder.",
+    );
+    expect(screen.queryByRole("button", { name: /descartar cambios/i })).toBeNull();
+  });
+
+  it("«Descartar cambios» sí sale, que para eso se confirmó", async () => {
+    await abrirFormulario();
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
+      target: { value: "Se descarta a propósito." },
+    });
+    cancelar();
+    fireEvent.click(screen.getByRole("button", { name: /descartar cambios/i }));
+
+    await waitFor(() => expect(screen.queryByLabelText(/Conclusión general/)).toBeNull());
+  });
+
+  it("el aviso cuenta los campos modificados, no sólo dice «hay cambios»", async () => {
+    await abrirFormulario();
+    fireEvent.click(screen.getByRole("button", { name: /IDENTIFICACIÓN DEL USUARIO/ }));
+    fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "OTRO NOMBRE" } });
+
+    // El texto va partido por el <strong> del número, así que se lee el párrafo.
+    const aviso = screen.getByText(/Estás ratificando el informe/);
+    expect(aviso.textContent).toMatch(/Llevas\s*1\s*campo modificado sin guardar/);
+  });
+});
