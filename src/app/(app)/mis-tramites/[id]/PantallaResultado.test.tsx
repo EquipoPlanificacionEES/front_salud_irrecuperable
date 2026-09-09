@@ -147,6 +147,33 @@ function informe(
  * EL FORMULARIO LO DESCRIBE EL BACKEND, así que las pruebas lo sirven en vez de
  * inventarlo: es el mismo contrato que consume la pantalla en producción.
  */
+/**
+ * EL FORMULARIO TAL COMO LO DESCRIBE EL SERVIDOR, con el contrato completo:
+ * cada campo lleva lo que estableció el sistema, lo que corrigió el médico y lo
+ * que se imprime. Sin PII: sintético.
+ */
+const campo = (
+  key: string,
+  label: string,
+  kind: string,
+  systemValue: string,
+  extra: Record<string, unknown> = {},
+) => ({
+  key,
+  label,
+  kind,
+  value: systemValue,
+  systemValue,
+  doctorValue: null,
+  effectiveValue: systemValue,
+  editable: true,
+  required: false,
+  systemDetermined: systemValue !== "",
+  sourceType: "ENGINE_COMPUTED",
+  correctionReasonRequired: false,
+  ...extra,
+});
+
 const FORMULARIO = {
   reportSnapshotId: "00000000-0000-4000-8000-000000000001",
   version: 1,
@@ -155,46 +182,61 @@ const FORMULARIO = {
       id: "I",
       title: "I. IDENTIFICACIÓN DEL USUARIO",
       fields: [
-        { key: "Nombre", label: "Nombre", kind: "TEXT", value: "PERSONA DE PRUEBA",
-          editable: false, required: false, systemDetermined: true },
+        campo("fullName", "Nombre", "TEXT", "PERSONA DE PRUEBA", {
+          sourceType: "SOURCE_EXTRACTION",
+          correctionReasonRequired: true,
+        }),
+        campo("nationalId", "RUT", "TEXT", "12.345.678-5", {
+          sourceType: "SOURCE_EXTRACTION",
+          correctionReasonRequired: true,
+        }),
       ],
     },
     {
       id: "II",
       title: "II. ANTECEDENTES Y REVISIÓN DE LICENCIAS MÉDICAS",
       fields: [
-        { key: "authorizedLicenseCount", label: "Total licencias autorizadas", kind: "INTEGER",
-          value: "0", editable: true, required: false, systemDetermined: false },
-        { key: "authorizedDaysKnown", label: "Total días autorizados", kind: "INTEGER",
-          value: "0", editable: true, required: false, systemDetermined: false },
+        campo("authorizedLicenseCount", "Total licencias autorizadas", "INTEGER", "0", {
+          systemDetermined: false,
+        }),
+        campo("authorizedDaysKnown", "Total días autorizados", "INTEGER", "0", {
+          systemDetermined: false,
+        }),
+        campo("tpiStage", "Etapa del trámite de invalidez (TPI)", "TEXT", "Sin trámite", {
+          sourceType: "SOURCE_EXTRACTION",
+        }),
       ],
     },
     {
       id: "III",
       title: "III. ANÁLISIS DE ANTECEDENTES CLÍNICOS",
       fields: [
-        { key: "clinicalAnalysis", label: "Análisis de antecedentes clínicos", kind: "LONG_TEXT",
-          value: "", editable: true, required: false, systemDetermined: false },
+        campo("clinicalAnalysis", "Análisis de antecedentes clínicos", "LONG_TEXT", "", {
+          sourceType: "ENGINE_NARRATIVE",
+        }),
       ],
     },
     {
       id: "IV",
       title: "IV. CONCLUSIÓN GENERAL",
       fields: [
-        { key: "conclusion", label: "Conclusión general", kind: "LONG_TEXT",
-          value: "", editable: true, required: true, systemDetermined: false },
+        campo("conclusion", "Conclusión general", "LONG_TEXT", "", {
+          required: true,
+          sourceType: "ENGINE_NARRATIVE",
+        }),
       ],
     },
     {
       id: "V",
       title: "V. PROPUESTA DE EVALUACIÓN DE SALUD",
       fields: [
-        { key: "assessment", label: "Evaluación", kind: "CHOICE", value: "",
-          editable: true, required: true, systemDetermined: false,
+        campo("assessment", "Evaluación", "CHOICE", "", {
+          required: true,
           options: [
             { value: "RECOVERABLE", label: "SALUD RECUPERABLE" },
             { value: "IRRECOVERABLE", label: "SALUD IRRECUPERABLE" },
-          ] },
+          ],
+        }),
       ],
     },
   ],
@@ -241,7 +283,7 @@ function llamadaA(mock: { mock: { calls: unknown[][] } }, fragmento: string) {
 
 async function abrirEditor(nombre: RegExp) {
   fireEvent.click(screen.getByRole("button", { name: nombre }));
-  await waitFor(() => expect(screen.getByPlaceholderText(/Redacta la conclusión general/)).toBeDefined());
+  await waitFor(() => expect(screen.getByLabelText(/Conclusión general/)).toBeDefined());
 }
 
 describe("PantallaResultado · acción de rectificar", () => {
@@ -550,9 +592,10 @@ describe("PantallaResultado · corrección estructurada", () => {
 
   it("manda assessment y conclusion en `correction`, no dentro del comentario", async () => {
     const cola = respuestas();
-    const fetchMock = vi.fn(async (_u?: unknown, init?: unknown) => {
-      void _u;
+    const fetchMock = vi.fn(async (u?: unknown, init?: unknown) => {
       void init;
+      // El editor lo describe el servidor: sin el formulario no hay campos.
+      if (String(u).includes("/manual-form")) return json(FORMULARIO);
       return cola.shift() as Response;
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -560,12 +603,12 @@ describe("PantallaResultado · corrección estructurada", () => {
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RECTIFICAR);
-    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
     // El médico cambia la propuesta: es el caso que motivó todo esto.
     // El primer radio es IRRECOVERABLE (ver el orden en la pantalla).
-    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
     fireEvent.click(screen.getByRole("button", { name: /guardar corrección/i }));
 
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
@@ -592,9 +635,18 @@ describe("PantallaResultado · corrección estructurada", () => {
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RECTIFICAR);
-    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
+    /**
+     * HAY QUE ELEGIR LA EVALUACIÓN, aunque sólo se corrija la conclusión.
+     *
+     * Antes venía premarcada con lo que propuso el motor y bastaba con guardar.
+     * Ya no: lo que se firma es un pronunciamiento, y un control premarcado
+     * convierte «no elegí» en «elegí esto». Lo que el sistema propuso se enseña
+     * al lado del control, que es informar sin decidir por quien firma.
+     */
+    fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
     fireEvent.click(screen.getByRole("button", { name: /guardar corrección/i }));
 
     await waitFor(() => expect(screen.getByText(/Versión 2/)).toBeDefined());
@@ -694,7 +746,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RATIFICAR);
-    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
 
@@ -710,8 +762,8 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RATIFICAR);
-    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
-    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+    fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "   " },
     });
 
@@ -726,11 +778,11 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
     await abrirEditor(RATIFICAR);
-    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
     // El primer radio es IRRECOVERABLE (ver el orden en la pantalla).
-    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
     fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
@@ -1004,35 +1056,42 @@ describe("PantallaResultado · formulario estructurado", () => {
 
     expect(screen.getByText("Total licencias autorizadas")).toBeDefined();
     expect(screen.getByText("Total días autorizados")).toBeDefined();
-    // Dos cifras que el sistema no pudo establecer → dos avisos.
-    expect(screen.getAllByText(/por completar/i)).toHaveLength(2);
+    // El aviso marca lo que el sistema NO pudo establecer, en cualquier
+    // sección. Con este formulario: las dos cifras, el análisis, la conclusión
+    // y la evaluación.
+    expect(screen.getAllByText(/por completar/i).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("la identificación no se puede editar desde el formulario", async () => {
+  it("la identificación se puede corregir, pero pide motivo antes de dejar confirmar", async () => {
     await abrirFormulario();
 
-    // La Sección I se muestra en modo lectura, sin ningún control.
-    const seccion = screen.getByText(/I\. IDENTIFICACIÓN DEL USUARIO/).closest("section");
-    expect(seccion?.querySelector("input")).toBeNull();
-    expect(seccion?.querySelector("textarea")).toBeNull();
+    // La sección viene plegada: no es lo que se corrige a diario.
+    fireEvent.click(screen.getByRole("button", { name: /IDENTIFICACIÓN DEL USUARIO/ }));
+    const nombre = screen.getByLabelText("Nombre") as HTMLInputElement;
+    expect(nombre.disabled).toBe(false);
+    // Y lo que leyó el sistema sigue a la vista.
+    expect(screen.getAllByText("PERSONA DE PRUEBA").length).toBeGreaterThan(0);
+
+    fireEvent.change(nombre, { target: { value: "OTRO NOMBRE" } });
+    // Cambiarlo hace aparecer el motivo, que antes no estaba.
+    expect(screen.getByText(/Motivo de la corrección/)).toBeDefined();
   });
 
   it("permite escribir el análisis clínico de la Sección III", async () => {
     await abrirFormulario();
 
-    expect(screen.getByPlaceholderText(/Análisis de los antecedentes clínicos/)).toBeDefined();
+    expect(screen.getByLabelText(/Análisis de antecedentes clínicos/)).toBeDefined();
   });
 
   it("manda sólo las cifras que el médico cambió", async () => {
     const fetchMock = await abrirFormulario();
 
-    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión del profesional." },
     });
-    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
     // Sólo una de las dos cifras.
-    const dias = screen.getByText("Total días autorizados").closest("label")?.querySelector("input");
-    fireEvent.change(dias as HTMLElement, { target: { value: "764" } });
+    fireEvent.change(screen.getByLabelText("Total días autorizados"), { target: { value: "764" } });
     fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
@@ -1050,10 +1109,10 @@ describe("PantallaResultado · formulario estructurado", () => {
   it("sin tocar ninguna cifra, no manda el bloque de cifras", async () => {
     const fetchMock = await abrirFormulario();
 
-    fireEvent.change(screen.getByPlaceholderText(/Redacta la conclusión general/), {
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión del profesional." },
     });
-    fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
+    fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
     fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
@@ -1074,7 +1133,7 @@ describe("PantallaResultado · formulario estructurado", () => {
     await abrirEditor(RECTIFICAR);
 
     expect(screen.getByText("Total licencias autorizadas")).toBeDefined();
-    expect(screen.getByPlaceholderText(/Análisis de los antecedentes clínicos/)).toBeDefined();
+    expect(screen.getByLabelText(/Análisis de antecedentes clínicos/)).toBeDefined();
     expect(screen.getAllByRole("radio")).toHaveLength(2);
   });
 });

@@ -5,6 +5,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCaseReport, useDoctorInbox, useInvalidar } from "@/lib/queries";
 import { queryKeys } from "@/lib/query-keys";
 import { FichaSkeleton, Refrescando } from "@/components/Skeleton";
+import {
+  EditorInforme,
+  borradorInicial,
+  camposModificados,
+  cuerpoDeCorreccion,
+  exigeMotivo,
+  type Borrador,
+  type FormularioInforme,
+} from "./EditorInforme";
 import { api, ApiFallo } from "@/lib/api";
 import {
   type DocumentoInforme,
@@ -281,23 +290,29 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   })();
 
   const [modo, setModo] = useState<"ver" | "modificar" | "resolver">("ver");
-  const [conclusion, setConclusion] = useState("");
+
   /**
    * SIN VALOR POR DEFECTO. Un radio premarcado convierte «no elegí» en «elegí
    * esto», y lo que se está eligiendo es el pronunciamiento que se firma. Sólo
    * se precarga cuando el informe YA trae una casilla que el médico corrige.
    */
-  const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
-  const [nota, setNota] = useState("");
+
+
   /**
    * EL FORMULARIO LO DESCRIBE EL BACKEND. Qué cifras se ofrecen y cuáles no
    * pudo establecer el sistema sale de `/manual-form`, no de una lista escrita
    * aquí: el informe y el formulario tienen que hablar de los mismos campos.
    */
-  const [form, setForm] = useState<ManualForm | null>(null);
-  /** Sección III, y las cifras de la II que el médico complete. */
-  const [analisis, setAnalisis] = useState("");
-  const [cifras, setCifras] = useState<Record<string, string>>({});
+  const [form, setForm] = useState<FormularioInforme | null>(null);
+  /**
+   * TODO LO QUE EL MÉDICO LLEVA ESCRITO, en un solo sitio.
+   *
+   * Antes eran cinco estados sueltos —conclusión, evaluación, análisis, cifras,
+   * nota— y cada campo nuevo del formulario habría sido un sexto. Ahora el
+   * formulario lo describe el servidor y el borrador es un mapa por clave: se
+   * amplía el contrato y esta pantalla no cambia.
+   */
+  const [borrador, setBorrador] = useState<Borrador>({ valores: {}, motivo: "", nota: "" });
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -323,42 +338,32 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       // error —que es lo que recoge el `catch` de abajo—.
       const f = await qc.query({
         queryKey: queryKeys.cases.manualForm(rep.id),
-        queryFn: () => api<ManualForm>(`/reports/${rep.id}/manual-form`),
+        queryFn: () => api<FormularioInforme>(`/reports/${rep.id}/manual-form`),
         staleTime: 0,
       });
       setForm(f);
-      setAnalisis(f.sections.find((s) => s.id === "III")?.fields[0]?.value ?? "");
-      setCifras(
-        Object.fromEntries(
-          (f.sections.find((s) => s.id === "II")?.fields ?? []).map((c) => [c.key, c.value]),
-        ),
-      );
+      setBorrador(borradorInicial(f));
     } catch {
       setForm(null);
+      setBorrador({ valores: {}, motivo: "", nota: "" });
     }
-    // El punto de partida es la conclusión TAL COMO SE ENTREGA, no el volcado
-    // interno: el médico reescribe lo que va a firmar.
-    setConclusion((rep.document.sections.find((s) => s.id === "IV")?.paragraphs ?? []).join("\n\n"));
-    // Sólo se precarga la casilla que el informe YA trae marcada. Cuando no hay
-    // ninguna, no se elige una por él.
-    setEvaluacion(
-      rep.proposal.recoverableChecked
-        ? "RECOVERABLE"
-        : rep.proposal.irrecoverableChecked
-          ? "IRRECOVERABLE"
-          : null,
-    );
-    // La nota es del MÉDICO y empieza vacía. Se precargaba con
-    // `unresolvedNote`, que es una frase del sistema —«Sin selección
-    // representable: requiere pronunciamiento profesional»— y acabaría enviada
-    // como observación suya en un informe que él firma.
-    setNota("");
+    /**
+     * QUÉ SE PRECARGA LO DECIDE EL SERVIDOR, y ya viene resuelto en el
+     * formulario: la conclusión que se entrega, las cifras, la narrativa. Esta
+     * pantalla no vuelve a elegirlo.
+     *
+     * La casilla de la Sección V llega VACÍA cuando el médico no se ha
+     * pronunciado, incluso si el motor concluyó: un control premarcado convierte
+     * «no elegí» en «elegí esto». Lo que propuso el sistema se enseña al lado.
+     * Y la nota empieza vacía porque es suya.
+     */
     setMsg(null);
     setModo(destino);
   }
 
   async function enviarModificacion() {
-    if (!rep || conclusion.trim().length < 1 || evaluacion === null) return;
+    // El servidor valida igual; esto evita mandarle lo que va a rechazar.
+    if (!rep || !cuerpoListo || faltaMotivo) return;
     setBusy(true);
     setMsg(null);
     /**
@@ -419,32 +424,25 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * que el médico cambió — un campo intacto no es un cero, y escribirlo
    * borraría lo que el sistema sí computó.
    */
+  /**
+   * LO QUE SE ENVÍA, y es lo MISMO por las dos vías: corregir y resolver piden
+   * los mismos campos porque son el mismo informe. Sólo viaja lo que el médico
+   * CAMBIÓ — un campo intacto no es un dato nuevo, y mandarlo haría
+   * indistinguible «confirmé este valor» de «lo escribí yo».
+   */
   function cuerpoFormulario() {
-    const original = new Map(
-      (form?.sections.find((s) => s.id === "II")?.fields ?? []).map((c) => [c.key, c.value]),
-    );
-    const cambiadas = Object.entries(cifras).filter(
-      ([k, v]) => v.trim() !== "" && v.trim() !== (original.get(k) ?? ""),
-    );
-    const analisisOriginal = form?.sections.find((s) => s.id === "III")?.fields[0]?.value ?? "";
-
-    return {
-      assessment: evaluacion,
-      conclusion: conclusion.trim(),
-      ...(analisis.trim() && analisis.trim() !== analisisOriginal
-        ? { clinicalAnalysis: analisis.trim() }
-        : {}),
-      ...(cambiadas.length > 0
-        ? { figures: Object.fromEntries(cambiadas.map(([k, v]) => [k, Number(v)])) }
-        : {}),
-      ...(nota.trim() ? { note: nota.trim() } : {}),
-    };
+    return cuerpoDeCorreccion(form, borrador);
   }
+
+  /** ¿Se puede confirmar? El servidor manda, pero no se envía lo que va a rechazar. */
+  const cambios = camposModificados(form, borrador);
+  const faltaMotivo = exigeMotivo(form, borrador) && borrador.motivo.trim().length < 10;
+  const cuerpoListo = cuerpoDeCorreccion(form, borrador) !== null;
 
   async function ratificar() {
     if (!rep) return;
     const resolviendo = modo === "resolver";
-    if (resolviendo && (evaluacion === null || conclusion.trim().length < 1)) return;
+    if (resolviendo && (!cuerpoListo || faltaMotivo)) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -589,13 +587,26 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       {editando && (
         <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO.info}`}>
           {modo === "resolver" ? "Estás ratificando el informe." : "Estás modificando el informe."} Puedes
-          completar las <strong>cifras de licencias (II)</strong>, el{" "}
-          <strong>análisis clínico (III)</strong>, la <strong>Conclusión general (IV)</strong> y la{" "}
-          <strong>Propuesta de evaluación (V)</strong>. La identificación no se modifica.
+          corregir cualquier campo que salga en el documento. Debajo de cada uno se muestra lo que
+          estableció el sistema, y puedes volver a ello. Cambiar datos de{" "}
+          <strong>identificación</strong> exige un motivo escrito.
+          {cambios.length > 0 && (
+            <>
+              {" "}
+              Llevas <strong>{cambios.length}</strong> campo{cambios.length > 1 ? "s" : ""} modificado
+              {cambios.length > 1 ? "s" : ""} sin guardar.
+            </>
+          )}
         </p>
       )}
 
-      {/* Documento */}
+      {/* EL EDITOR, o el documento. Mientras se corrige se enseña el
+          formulario que describe el servidor; al salir, el documento otra vez.
+          Antes esto era una rama por sección dentro del render del documento, y
+          cada campo nuevo del contrato habría sido otra rama. */}
+      {editando && form ? (
+        <EditorInforme form={form} borrador={borrador} onChange={setBorrador} />
+      ) : (
       <div className="overflow-hidden rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm">
         {rep.document.draftNotice && (
           <p className="border-b border-[var(--atm-linea)] bg-[var(--atm-fondo)] px-5 py-2 text-xs text-zinc-500">
@@ -603,78 +614,17 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           </p>
         )}
         {rep.document.sections.map((s) => {
-          const esEditable = editando && EDITABLES.has(s.id);
-          const bloqueada = editando && !EDITABLES.has(s.id);
           return (
             <section
               key={s.id}
-              className={`border-t border-[var(--atm-linea)] px-5 py-4 first:border-t-0 ${
-                esEditable ? "bg-blue-50/50 ring-1 ring-inset ring-[var(--atm-azul2)]" : bloqueada ? "opacity-55" : ""
-              }`}
+              className="border-t border-[var(--atm-linea)] px-5 py-4 first:border-t-0"
             >
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold text-zinc-800">{s.title}</h4>
-                {esEditable && (
-                  <span className="shrink-0 rounded-full bg-[var(--atm-azul)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                    Editable
-                  </span>
-                )}
-                {bloqueada && <span className="shrink-0 text-[10px] uppercase tracking-wide text-zinc-400">Solo lectura</span>}
               </div>
 
-              {editando && s.id === "II" ? (
-                /* LAS CIFRAS QUE OFRECE EL BACKEND, ni una más. Las que el
-                   sistema no pudo establecer se señalan: es lo que hay que
-                   buscar en los antecedentes. */
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(form?.sections.find((x) => x.id === "II")?.fields ?? []).map((campo) => (
-                    <label key={campo.key} className="text-sm">
-                      <span className="text-zinc-600">{campo.label}</span>
-                      {!campo.systemDetermined && (
-                        <span className="ml-1 text-xs font-medium text-[var(--atm-obs)]">· por completar</span>
-                      )}
-                      <input
-                        type="number"
-                        min={0}
-                        className={`${inputBase} mt-1`}
-                        value={cifras[campo.key] ?? ""}
-                        onChange={(e) => setCifras((c) => ({ ...c, [campo.key]: e.target.value }))}
-                      />
-                    </label>
-                  ))}
-                </div>
-              ) : editando && s.id === "III" ? (
-                <textarea
-                  className={`${inputBase} min-h-[120px]`}
-                  value={analisis}
-                  onChange={(e) => setAnalisis(e.target.value)}
-                  placeholder="Análisis de los antecedentes clínicos"
-                />
-              ) : editando && s.id === "IV" ? (
-                <textarea
-                  className={`${inputBase} min-h-[130px]`}
-                  value={conclusion}
-                  onChange={(e) => setConclusion(e.target.value)}
-                  placeholder="Redacta la conclusión general"
-                />
-              ) : editando && s.id === "V" ? (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {(["IRRECOVERABLE", "RECOVERABLE"] as const).map((v) => (
-                      <label
-                        key={v}
-                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                          evaluacion === v ? "border-[var(--atm-azul2)] bg-white font-medium text-[var(--atm-azul)]" : "border-[var(--atm-linea)] bg-white text-zinc-600"
-                        }`}
-                      >
-                        <input type="radio" name="evaluacion" checked={evaluacion === v} onChange={() => setEvaluacion(v)} />
-                        {v === "RECOVERABLE" ? "Salud recuperable" : "Salud irrecuperable"}
-                      </label>
-                    ))}
-                  </div>
-                  <textarea className={inputBase} rows={2} value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Nota (opcional)" />
-                </div>
-              ) : (
+              {(
+
                 <>
                   {s.fields.length > 0 && (
                     <dl className="grid grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2">
@@ -802,6 +752,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           );
         })}
       </div>
+      )}
 
       {/* Historial de pronunciamientos */}
       {rep.reviews.length > 0 && !editando && (
@@ -851,7 +802,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                   hay nada que proponer ni que firmar. */}
               <button
                 onClick={modo === "resolver" ? ratificar : enviarModificacion}
-                disabled={busy || !conclusion.trim() || evaluacion === null}
+                disabled={busy || !cuerpoListo || faltaMotivo}
                 className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40"
               >
                 {modo === "resolver"
