@@ -323,6 +323,19 @@ export function invalidacionesDe(qc: QueryClient) {
         inv(queryKeys.cases.report(caseId)),
         inv(queryKeys.doctor.inbox()),
       ]),
+    /**
+     * Se rectificó el identificador de un expediente, quizá absorbiendo otro.
+     * Cambia cómo se llama el caso en TODAS partes, y el absorbido deja de
+     * aparecer como activo: se invalida el listado entero, no una fila.
+     */
+    identificadorRectificado: (caseId: string) =>
+      Promise.all([
+        inv(["admin", "cases"]),
+        inv(["reports"]),
+        inv(queryKeys.admin.holds()),
+        inv(queryKeys.cases.report(caseId)),
+        inv(queryKeys.doctor.inbox()),
+      ]),
     /** Se reparte o se mueve trabajo entre médicos. */
     asignacionesCambiadas: () =>
       Promise.all([

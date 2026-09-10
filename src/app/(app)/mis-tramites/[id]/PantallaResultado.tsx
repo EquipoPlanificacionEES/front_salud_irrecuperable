@@ -68,7 +68,14 @@ interface Review {
 }
 interface Report {
   id: string;
+  /** El número CONGELADO en esta versión. En un firmado no cambia nunca. */
   caseReference: string;
+  /**
+   * Cómo se llama el expediente HOY. Sale del caso, no del snapshot, y por eso
+   * puede diferir de `caseReference` sin que nada esté mal: uno dice cómo se
+   * llama, el otro cómo se llamaba cuando se compuso esta versión.
+   */
+  caseIdentifier?: { current: string; previous: string | null };
   version: number;
   createdAt: string;
   workflowStatus: ReportWorkflowStatus;
@@ -562,7 +569,17 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       <div className="rounded-xl border border-[var(--atm-linea)] bg-white px-5 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-base font-semibold text-zinc-900">Trámite {rep.caseReference}</h3>
+            <h3 className="text-base font-semibold text-zinc-900">
+              Trámite {rep.caseIdentifier?.current ?? rep.caseReference}
+            </h3>
+            {/* Sólo cuando de verdad hubo rectificación. Se dice en la ficha
+                porque el expediente se cita por el número anterior en correos y
+                papeles que siguen circulando. */}
+            {rep.caseIdentifier?.previous && (
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Identificador anterior: {rep.caseIdentifier.previous} · rectificado administrativamente
+              </p>
+            )}
             <p className="mt-0.5 text-xs text-zinc-500">
               Versión {rep.version} · preinforme del {fecha(rep.createdAt)}
             </p>

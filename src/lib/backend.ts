@@ -252,7 +252,13 @@ export interface AssignmentPreview {
 
 export interface OperationalCase {
   caseId: string;
+  /** El número de trámite VIGENTE: el canónico si hubo rectificación. */
   externalCaseId: string;
+  /**
+   * Con el que nació el expediente, sólo cuando difiere del vigente. Nulo en
+   * la inmensa mayoría; cuando está, hubo una rectificación administrativa.
+   */
+  previousExternalCaseId: string | null;
   /** Ver `CaseClassification`. La resuelve el backend; aquí no se deduce. */
   classification: CaseClassification;
   /** Retención activa, o null. */

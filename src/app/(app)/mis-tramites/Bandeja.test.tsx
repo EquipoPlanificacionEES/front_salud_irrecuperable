@@ -26,6 +26,7 @@ function caso(
   return {
     caseId: `00000000-0000-4000-8000-${externalCaseId.padStart(12, "0")}`,
     externalCaseId,
+    previousExternalCaseId: null,
     classification,
     hold: opciones.retenido ?? classification === "HOLD"
       ? { active: true, statement: "Este caso se encuentra temporalmente retenido para revisión administrativa." }

@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
 import { useAdminCases, useBatches, useDoctorWorkload, useInvalidar } from "@/lib/queries";
 import { CASE_STATUS_LABEL, ORIENTATION_LABEL, WORKFLOW_LABEL } from "@/lib/backend";
 import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Chip, FilaVacia, Select, Stat, Tabla, Textarea, workflowTono } from "../ui";
+import { RectificarId } from "./RectificarId";
 
 // GET  /api/v1/admin/cases?batchId=&assignment=&status=&limit=&offset=
 // GET  /api/v1/admin/doctor-workload            (desplegable de reasignación)
 // PUT  /api/v1/admin/cases/:id/assignment       {doctorProfileId}
 // POST /api/v1/admin/cases/:id/assignment/end   {reason}   ← el motivo es OBLIGATORIO
+// POST /api/v1/admin/cases/:id/rectify-external-id            ← sólo ADMIN
 
 export function Casos() {
   // Filtros: estado de INTERFAZ. Entran en la clave de la consulta, así que dos
@@ -22,6 +24,8 @@ export function Casos() {
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
   const [moviendo, setMoviendo] = useState<string | null>(null);
+  /** Qué fila tiene abierto el formulario de rectificación de identificador. */
+  const [rectificando, setRectificando] = useState<string | null>(null);
 
   // Compartidas con el resumen, informes, asignaciones y reasignación: si otra
   // pantalla las pidió hace poco, aquí no cuestan nada.
@@ -119,8 +123,16 @@ export function Casos() {
           <FilaVacia cols={7}>Sin casos. Llegan cuando el bot procesa una semana.</FilaVacia>
         )}
         {casos.map((c) => (
-          <tr key={c.caseId} className="border-t border-[var(--atm-linea)] align-top hover:bg-[var(--atm-fondo)]">
-            <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>
+          <Fragment key={c.caseId}>
+          <tr className="border-t border-[var(--atm-linea)] align-top hover:bg-[var(--atm-fondo)]">
+            <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">
+              {c.externalCaseId}
+              {c.previousExternalCaseId && (
+                <span className="mt-0.5 block font-sans text-[11px] font-normal text-zinc-500">
+                  antes {c.previousExternalCaseId}
+                </span>
+              )}
+            </td>
             <td className="px-4 py-2.5 text-zinc-600">{c.batch?.name ?? "—"}</td>
             <td className="px-4 py-2.5">
               <Chip>{CASE_STATUS_LABEL[c.status] ?? c.status}</Chip>
@@ -185,6 +197,18 @@ export function Casos() {
               )}
             </td>
             <td className="px-4 py-2.5 text-right">
+              {rectificando !== c.caseId && (
+                <Btn
+                  variante="neutral"
+                  className="mr-2 px-2.5 py-1 text-xs"
+                  onClick={() => {
+                    setRectificando(c.caseId);
+                    setMsg(null);
+                  }}
+                >
+                  Rectificar ID
+                </Btn>
+              )}
               {c.assignment && quitando !== c.caseId && (
                 <Btn
                   variante="danger"
@@ -200,6 +224,18 @@ export function Casos() {
               )}
             </td>
           </tr>
+          {rectificando === c.caseId && (
+            <tr className="border-t border-[var(--atm-linea)]">
+              <td colSpan={7} className="px-4 pb-3">
+                <RectificarId
+                  caso={c}
+                  onCerrar={() => setRectificando(null)}
+                  onHecho={(texto) => setMsg({ ok: true, texto })}
+                />
+              </td>
+            </tr>
+          )}
+        </Fragment>
         ))}
       </Tabla>
     </div>

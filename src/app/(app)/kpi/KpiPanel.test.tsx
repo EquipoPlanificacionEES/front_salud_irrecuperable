@@ -20,6 +20,7 @@ function caso(ref: string, classification: CaseClassification): OperationalCase 
   return {
     caseId: `00000000-0000-4000-8000-${ref.padStart(12, "0")}`,
     externalCaseId: ref,
+    previousExternalCaseId: null,
     classification,
     hold: classification === "HOLD" ? { active: true, statement: "Retenido." } : null,
     sourceDocument: null,

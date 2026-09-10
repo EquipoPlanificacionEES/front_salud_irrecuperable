@@ -25,6 +25,7 @@ function caso(ref: string, classification: CaseClassification = "SIGNED"): Opera
   return {
     caseId: `00000000-0000-4000-8000-${ref.padStart(12, "0")}`,
     externalCaseId: ref,
+    previousExternalCaseId: null,
     classification,
     hold: null,
     sourceDocument: null,
