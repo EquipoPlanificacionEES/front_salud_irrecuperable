@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Ambito } from "@/lib/session";
@@ -33,6 +34,7 @@ export function SelectorAmbito({
   activoContractId: string;
 }) {
   const router = useRouter();
+  const qc = useQueryClient();
   const [cambiando, setCambiando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,8 +60,20 @@ export function SelectorAmbito({
       await api("/auth/active-scope", {
         json: { contractId: a.contractId, regionId: a.regionId },
       });
-      // Recarga de datos del servidor: todo lo que hay en pantalla pertenece al
-      // ámbito anterior y no se puede reetiquetar en el cliente.
+      /**
+       * LA CACHÉ ENTERA SE TIRA, no se invalida.
+       *
+       * Invalidar marca lo viejo como caducado pero lo SIGUE SIRVIENDO mientras
+       * llega lo nuevo: durante ese instante la pantalla diría "Maule" con los
+       * expedientes de Valparaíso debajo. En una aplicación clínica eso no es un
+       * parpadeo, es un expediente atribuido a la región equivocada.
+       *
+       * `cancelQueries` primero, porque una petición en vuelo del ámbito
+       * anterior llegaría DESPUÉS del vaciado y volvería a llenar la caché con
+       * lo de antes.
+       */
+      await qc.cancelQueries();
+      qc.clear();
       router.refresh();
     } catch {
       setError("No se pudo cambiar de ámbito.");

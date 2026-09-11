@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SelectorAmbito } from "./SelectorAmbito";
 import type { Ambito } from "@/lib/session";
@@ -37,9 +38,14 @@ beforeEach(() => {
   document.cookie = "sir_csrf=token";
 });
 
+/** El selector usa el cliente de consultas para vaciar la caché al cambiar. */
+function pintar(ui: React.ReactElement, client = new QueryClient()) {
+  return { ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>), client };
+}
+
 describe("selector de ámbito", () => {
   it("con UN ámbito no hay nada que elegir: sólo se dice dónde se está", () => {
-    render(<SelectorAmbito ambitos={[ambito()]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito()]} activoContractId="c-valpo" />);
     expect(screen.queryByTestId("selector-ambito")).toBeNull();
     // Pero SÍ queda evidente la región: que no lo esté es lo que hace que
     // alguien firme creyendo que el expediente es de otra.
@@ -47,7 +53,7 @@ describe("selector de ámbito", () => {
   });
 
   it("con DOS ámbitos aparece el selector, con los dos", () => {
-    render(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
     const select = screen.getByTestId("selector-ambito") as HTMLSelectElement;
     expect(select.options.length).toBe(2);
     expect([...select.options].map((o) => o.textContent)).toEqual([
@@ -57,7 +63,7 @@ describe("selector de ámbito", () => {
 
   it("cambiar de ámbito lo pide AL SERVIDOR y recarga", async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 204, text: () => Promise.resolve("") } as Response);
-    render(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
 
     fireEvent.change(screen.getByTestId("selector-ambito"), {
       target: { value: "c-maule|r-maule" },
@@ -77,7 +83,7 @@ describe("selector de ámbito", () => {
       ok: false, status: 403,
       text: () => Promise.resolve(JSON.stringify({ error: { message: "sin acceso" } })),
     } as Response);
-    render(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
 
     fireEvent.change(screen.getByTestId("selector-ambito"), {
       target: { value: "c-maule|r-maule" },
@@ -87,8 +93,26 @@ describe("selector de ámbito", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it("al cambiar, la caché del ámbito anterior NO sobrevive", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 204, text: () => Promise.resolve("") } as Response);
+    const client = new QueryClient();
+    // Un dato del ámbito anterior, ya en caché.
+    client.setQueryData(["cases", "c1", "report"], { caseId: "c1" });
+
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />, client);
+    fireEvent.change(screen.getByTestId("selector-ambito"), {
+      target: { value: "c-maule|r-maule" },
+    });
+
+    // Invalidar no basta: seguiría sirviéndose mientras llega lo nuevo, y la
+    // pantalla diría "Maule" con los expedientes de Valparaíso debajo.
+    await waitFor(() =>
+      expect(client.getQueryData(["cases", "c1", "report"])).toBeUndefined(),
+    );
+  });
+
   it("sin ámbitos no se pinta nada: no puede operar en ningún sitio", () => {
-    const { container } = render(<SelectorAmbito ambitos={[]} activoContractId="" />);
+    const { container } = pintar(<SelectorAmbito ambitos={[]} activoContractId="" />);
     expect(container.textContent).toBe("");
   });
 });
