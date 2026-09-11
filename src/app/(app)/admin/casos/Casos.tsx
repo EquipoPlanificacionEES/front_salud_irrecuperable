@@ -7,6 +7,7 @@ import { CASE_STATUS_LABEL, ORIENTATION_LABEL, WORKFLOW_LABEL } from "@/lib/back
 import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Chip, FilaVacia, Select, Stat, Tabla, Textarea, workflowTono } from "../ui";
 import { RectificarId } from "./RectificarId";
+import { SustituirFuente } from "./SustituirFuente";
 
 // GET  /api/v1/admin/cases?batchId=&assignment=&status=&limit=&offset=
 // GET  /api/v1/admin/doctor-workload            (desplegable de reasignación)
@@ -26,6 +27,8 @@ export function Casos() {
   const [moviendo, setMoviendo] = useState<string | null>(null);
   /** Qué fila tiene abierto el formulario de rectificación de identificador. */
   const [rectificando, setRectificando] = useState<string | null>(null);
+  /** Qué fila tiene abierto el formulario de sustitución de expediente. */
+  const [sustituyendo, setSustituyendo] = useState<string | null>(null);
 
   // Compartidas con el resumen, informes, asignaciones y reasignación: si otra
   // pantalla las pidió hace poco, aquí no cuestan nada.
@@ -197,17 +200,31 @@ export function Casos() {
               )}
             </td>
             <td className="px-4 py-2.5 text-right">
-              {rectificando !== c.caseId && (
-                <Btn
-                  variante="neutral"
-                  className="mr-2 px-2.5 py-1 text-xs"
-                  onClick={() => {
-                    setRectificando(c.caseId);
-                    setMsg(null);
-                  }}
-                >
-                  Corregir ID
-                </Btn>
+              {rectificando !== c.caseId && sustituyendo !== c.caseId && (
+                <>
+                  <Btn
+                    variante="neutral"
+                    className="mr-2 px-2.5 py-1 text-xs"
+                    onClick={() => {
+                      setRectificando(c.caseId);
+                      setSustituyendo(null);
+                      setMsg(null);
+                    }}
+                  >
+                    Corregir ID
+                  </Btn>
+                  <Btn
+                    variante="neutral"
+                    className="mr-2 px-2.5 py-1 text-xs"
+                    onClick={() => {
+                      setSustituyendo(c.caseId);
+                      setRectificando(null);
+                      setMsg(null);
+                    }}
+                  >
+                    Sustituir expediente
+                  </Btn>
+                </>
               )}
               {c.assignment && quitando !== c.caseId && (
                 <Btn
@@ -230,6 +247,17 @@ export function Casos() {
                 <RectificarId
                   caso={c}
                   onCerrar={() => setRectificando(null)}
+                  onHecho={(texto) => setMsg({ ok: true, texto })}
+                />
+              </td>
+            </tr>
+          )}
+          {sustituyendo === c.caseId && (
+            <tr className="border-t border-[var(--atm-linea)]">
+              <td colSpan={7} className="px-4 pb-3">
+                <SustituirFuente
+                  caso={c}
+                  onCerrar={() => setSustituyendo(null)}
                   onHecho={(texto) => setMsg({ ok: true, texto })}
                 />
               </td>

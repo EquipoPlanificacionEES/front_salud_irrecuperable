@@ -109,6 +109,8 @@ export interface CaseHold {
   statement: string;
   /** Sólo llega a ADMIN y CALIDAD, que son quienes la resuelven. */
   reason?: "DUPLICATE_SOURCE_DOCUMENT" | "SOURCE_IDENTITY_CONFLICT";
+  /** Como `reason`: sólo para quien puede levantarla. */
+  holdId?: string;
 }
 
 /**
