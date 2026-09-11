@@ -15,6 +15,7 @@ import {
   type FormularioInforme,
 } from "./EditorInforme";
 import { FormularioPeritaje } from "./FormularioPeritaje";
+import { FueraDeAmbito } from "./FueraDeAmbito";
 import { PanelCita } from "./PanelCita";
 import { api, ApiFallo } from "@/lib/api";
 import {
@@ -693,6 +694,12 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       {peritaje && (peritaje.fields?.length ?? 0) > 0 && (
         <FormularioPeritaje caseId={caseId} peritaje={peritaje} />
       )}
+      {/*
+        SÓLO mientras el peritaje siga abierto. Una vez completado, la salida
+        del circuito ya no es ésta: el expediente tiene un pronunciamiento que
+        alguien escribió.
+      */}
+      {peritaje?.status === "DRAFT" && <FueraDeAmbito caseId={caseId} />}
 
       {/* EL EDITOR, o el documento. Mientras se corrige se enseña el
           formulario que describe el servidor; al salir, el documento otra vez.
