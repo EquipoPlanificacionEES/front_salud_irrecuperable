@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
+import type { Ambito } from "@/lib/session";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Rol } from "@/lib/roles";
@@ -19,6 +20,8 @@ export interface SesionCliente {
   contrato: string;
   contratoId: string;
   doctorProfileId: string | null;
+  /** Dónde puede trabajar. Lo resuelve el backend; aquí sólo se pinta. */
+  ambitos: Ambito[];
 }
 
 interface Ctx {

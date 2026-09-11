@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { NAV } from "@/lib/roles";
 import { EnlaceNav } from "./EnlaceNav";
+import { SelectorAmbito } from "./SelectorAmbito";
 import { useSesion } from "./SesionProvider";
 
 // Layout visual compartido (TSI-202) — cabecera + navegación, paleta ATM de la plataforma actual.
@@ -16,9 +17,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="flex items-center justify-between border-b border-[var(--atm-linea)] bg-white px-6 py-4">
         <div>
           <h1 className="text-base font-semibold text-zinc-900">Evaluación de Salud Irrecuperable</h1>
-          <p className="text-sm text-zinc-500">
-            {sesion.nombre} · <span className="capitalize">{sesion.rol}</span>
-            {sesion.contrato ? ` · ${sesion.contrato}` : ""}
+          {/*
+            DÓNDE SE ESTÁ TRABAJANDO, siempre visible. Con un solo ámbito es
+            texto; con varios, el selector. Que no sea evidente en qué región
+            está uno es lo que hace que alguien firme un expediente creyendo que
+            es de otra.
+          */}
+          <p className="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+            <span>
+              {sesion.nombre} · <span className="capitalize">{sesion.rol}</span>
+            </span>
+            <SelectorAmbito ambitos={sesion.ambitos} activoContractId={sesion.contratoId} />
           </p>
         </div>
         {/* Reacciona al instante: cerrar sesión llama al backend, vacía la
