@@ -12,7 +12,7 @@ import { RectificarId } from "./RectificarId";
 // GET  /api/v1/admin/doctor-workload            (desplegable de reasignación)
 // PUT  /api/v1/admin/cases/:id/assignment       {doctorProfileId}
 // POST /api/v1/admin/cases/:id/assignment/end   {reason}   ← el motivo es OBLIGATORIO
-// POST /api/v1/admin/cases/:id/rectify-external-id            ← sólo ADMIN
+// POST /api/v1/admin/cases/:id/correct-identity                ← sólo ADMIN
 
 export function Casos() {
   // Filtros: estado de INTERFAZ. Entran en la clave de la consulta, así que dos
@@ -206,7 +206,7 @@ export function Casos() {
                     setMsg(null);
                   }}
                 >
-                  Rectificar ID
+                  Corregir ID
                 </Btn>
               )}
               {c.assignment && quitando !== c.caseId && (

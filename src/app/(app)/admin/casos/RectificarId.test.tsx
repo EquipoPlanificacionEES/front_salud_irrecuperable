@@ -62,7 +62,7 @@ function backend(options: {
 }) {
   return vi.fn(async (url: string, init?: { body?: string; method?: string }) => {
     const u = String(url);
-    if (u.includes("/rectify-external-id")) {
+    if (u.includes("/correct-identity")) {
       const r = options.rectify?.() ?? { status: 200, body: { caseId: ORIGEN.caseId } };
       return new Response(JSON.stringify(r.body), {
         status: r.status,
@@ -101,12 +101,20 @@ async function pintar(options: Parameters<typeof backend>[0]) {
 /** Abre el formulario de la primera fila. */
 async function abrir(options: Parameters<typeof backend>[0]) {
   const fetchMock = await pintar(options);
-  fireEvent.click(screen.getAllByRole("button", { name: /rectificar id/i })[0] as HTMLElement);
+  fireEvent.click(screen.getAllByRole("button", { name: /corregir id/i })[0] as HTMLElement);
   await waitFor(() => expect(screen.getByLabelText("Identificador nuevo")).toBeDefined());
   return fetchMock;
 }
 
-function escribir(nuevoId: string, nota: string) {
+/** Elegir el tipo de corrección es obligatorio antes que nada. */
+function elegirModo(modo: "RECTIFY_ID" | "REASSIGN_CASE" = "REASSIGN_CASE") {
+  const radios = screen.getAllByRole("radio") as HTMLInputElement[];
+  const i = modo === "RECTIFY_ID" ? 0 : 1;
+  fireEvent.click(radios[i] as HTMLInputElement);
+}
+
+function escribir(nuevoId: string, nota: string, modo: "RECTIFY_ID" | "REASSIGN_CASE" = "REASSIGN_CASE") {
+  elegirModo(modo);
   fireEvent.change(screen.getByLabelText("Identificador nuevo"), { target: { value: nuevoId } });
   fireEvent.change(screen.getByLabelText("Justificación"), { target: { value: nota } });
 }
@@ -133,7 +141,7 @@ describe("Rectificar identificador · pantalla de administración", () => {
     const actual = screen.getByDisplayValue("34208241") as HTMLInputElement;
     expect(actual.readOnly).toBe(true);
 
-    const enviar = screen.getByRole("button", { name: /rectificar identificador/i });
+    const enviar = screen.getByRole("button", { name: /corregir identificador/i });
     expect((enviar as HTMLButtonElement).disabled).toBe(true);
 
     escribir("34218380", "corto");
@@ -141,7 +149,7 @@ describe("Rectificar identificador · pantalla de administración", () => {
     await waitFor(() => expect(screen.getByText(/está libre/i)).toBeDefined());
 
     // Con el identificador comprobado pero SIN justificación suficiente, sigue bloqueado.
-    expect((screen.getByRole("button", { name: /rectificar identificador/i }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: /corregir identificador/i }) as HTMLButtonElement).disabled).toBe(
       true,
     );
   });
@@ -150,7 +158,7 @@ describe("Rectificar identificador · pantalla de administración", () => {
     await abrir({ casos: [ORIGEN] });
     escribir("34218380", NOTA);
 
-    expect((screen.getByRole("button", { name: /rectificar identificador/i }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: /corregir identificador/i }) as HTMLButtonElement).disabled).toBe(
       true,
     );
     expect(screen.getByText(/comprueba el identificador de destino/i)).toBeDefined();
@@ -167,7 +175,7 @@ describe("Rectificar identificador · pantalla de administración", () => {
     expect(screen.getByText("Firmado: no")).toBeDefined();
 
     // Sin marcar la casilla no se puede enviar.
-    const enviar = () => screen.getByRole("button", { name: /rectificar identificador/i }) as HTMLButtonElement;
+    const enviar = () => screen.getByRole("button", { name: /corregir identificador/i }) as HTMLButtonElement;
     expect(enviar().disabled).toBe(true);
     expect(screen.getByText(/confirma la absorción/i)).toBeDefined();
 
@@ -181,14 +189,14 @@ describe("Rectificar identificador · pantalla de administración", () => {
     fireEvent.click(screen.getByRole("button", { name: /^comprobar$/i }));
     await waitFor(() => expect(screen.getByText("Existe un caso con este ID")).toBeDefined());
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: /rectificar identificador/i }));
+    fireEvent.click(screen.getByRole("button", { name: /corregir identificador/i }));
 
     await waitFor(() => {
-      const llamada = fetchMock.mock.calls.find((c) => String(c[0]).includes("/rectify-external-id"));
+      const llamada = fetchMock.mock.calls.find((c) => String(c[0]).includes("/correct-identity"));
       expect(llamada).toBeDefined();
       const cuerpo = JSON.parse((llamada?.[1] as { body: string }).body) as Record<string, unknown>;
-      expect(cuerpo["canonicalExternalCaseId"]).toBe("34218380");
-      expect(cuerpo["reason"]).toBe("COUNTERPART_CONFIRMED_ID_CORRECTION");
+      expect(cuerpo["mode"]).toBe("REASSIGN_CASE");
+      expect(cuerpo["targetExternalCaseId"]).toBe("34218380");
       expect(cuerpo["note"]).toBe(NOTA);
       expect(cuerpo["absorbCaseId"]).toBe(PLACEHOLDER.caseId);
     });
@@ -199,10 +207,10 @@ describe("Rectificar identificador · pantalla de administración", () => {
     escribir("34999999", NOTA);
     fireEvent.click(screen.getByRole("button", { name: /^comprobar$/i }));
     await waitFor(() => expect(screen.getByText(/está libre/i)).toBeDefined());
-    fireEvent.click(screen.getByRole("button", { name: /rectificar identificador/i }));
+    fireEvent.click(screen.getByRole("button", { name: /corregir identificador/i }));
 
     await waitFor(() => {
-      const llamada = fetchMock.mock.calls.find((c) => String(c[0]).includes("/rectify-external-id"));
+      const llamada = fetchMock.mock.calls.find((c) => String(c[0]).includes("/correct-identity"));
       const cuerpo = JSON.parse((llamada?.[1] as { body: string }).body) as Record<string, unknown>;
       expect("absorbCaseId" in cuerpo).toBe(false);
     });
@@ -214,9 +222,9 @@ describe("Rectificar identificador · pantalla de administración", () => {
     fireEvent.click(screen.getByRole("button", { name: /^comprobar$/i }));
     await waitFor(() => expect(screen.getByText("Existe un caso con este ID")).toBeDefined());
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: /rectificar identificador/i }));
+    fireEvent.click(screen.getByRole("button", { name: /corregir identificador/i }));
 
-    await waitFor(() => expect(screen.getByText(/Identificador rectificado a 34218380/)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Identificador corregido a 34218380/)).toBeDefined());
     expect(screen.getByText(/34218380 quedó absorbido|quedó absorbido/)).toBeDefined();
   });
 
@@ -239,7 +247,7 @@ describe("Rectificar identificador · pantalla de administración", () => {
     fireEvent.click(screen.getByRole("button", { name: /^comprobar$/i }));
     await waitFor(() => expect(screen.getByText("Existe un caso con este ID")).toBeDefined());
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: /rectificar identificador/i }));
+    fireEvent.click(screen.getByRole("button", { name: /corregir identificador/i }));
 
     await waitFor(() =>
       expect(
@@ -259,10 +267,10 @@ describe("Rectificar identificador · pantalla de administración", () => {
     escribir("34999999", NOTA);
     fireEvent.click(screen.getByRole("button", { name: /^comprobar$/i }));
     await waitFor(() => expect(screen.getByText(/está libre/i)).toBeDefined());
-    fireEvent.click(screen.getByRole("button", { name: /rectificar identificador/i }));
+    fireEvent.click(screen.getByRole("button", { name: /corregir identificador/i }));
 
     await waitFor(() => expect(screen.getByText(/no tiene permiso/i)).toBeDefined());
-    expect(screen.queryByText(/Identificador rectificado/)).toBeNull();
+    expect(screen.queryByText(/Identificador corregido/)).toBeNull();
   });
 
   it("el listado muestra el identificador anterior cuando lo hay", async () => {
@@ -277,5 +285,61 @@ describe("Rectificar identificador · pantalla de administración", () => {
   it("un caso sin rectificar no muestra ningún identificador anterior", async () => {
     await pintar({ casos: [ORIGEN] });
     expect(screen.queryByText(/^antes /)).toBeNull();
+  });
+});
+
+/**
+ * LOS DOS MODOS, que son la razón de ser de esta pantalla.
+ *
+ * Elegir mal no es un detalle de redacción: si los antecedentes pertenecían a
+ * otro trámite y se marca «el identificador era incorrecto», el trámite real
+ * que lleva ese número no podrá existir nunca.
+ */
+describe("Corregir identificador · los dos tipos de error", () => {
+  it("no deja enviar hasta elegir el tipo de corrección", async () => {
+    await abrir({ casos: [ORIGEN] });
+
+    expect(screen.getByText(/elige primero el tipo de corrección/i)).toBeDefined();
+    expect(
+      (screen.getByRole("button", { name: /corregir identificador/i }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("la reasignación advierte EXPRESAMENTE que el identificador quedará disponible", async () => {
+    await abrir({ casos: [ORIGEN] });
+
+    expect(
+      screen.getByText(/QUEDARÁ DISPONIBLE para recibir su propio expediente/i),
+    ).toBeDefined();
+    expect(screen.getByText(/queda ligado a este expediente como historia/i)).toBeDefined();
+  });
+
+  it("manda el modo elegido, y RECTIFY_ID no promete liberar nada", async () => {
+    const fetchMock = await abrir({ casos: [ORIGEN] });
+    escribir("34999999", NOTA, "RECTIFY_ID");
+    fireEvent.click(screen.getByRole("button", { name: /^comprobar$/i }));
+    await waitFor(() => expect(screen.getByText(/está libre/i)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /corregir identificador/i }));
+
+    await waitFor(() => {
+      const llamada = fetchMock.mock.calls.find((c) => String(c[0]).includes("/correct-identity"));
+      const cuerpo = JSON.parse((llamada?.[1] as { body: string }).body) as Record<string, unknown>;
+      expect(cuerpo["mode"]).toBe("RECTIFY_ID");
+    });
+    await waitFor(() =>
+      expect(screen.queryByText(/queda disponible para su propio expediente/i)).toBeNull(),
+    );
+  });
+
+  it("tras reasignar, dice que el identificador anterior queda disponible", async () => {
+    await abrir({ casos: [ORIGEN] });
+    escribir("34999999", NOTA, "REASSIGN_CASE");
+    fireEvent.click(screen.getByRole("button", { name: /^comprobar$/i }));
+    await waitFor(() => expect(screen.getByText(/está libre/i)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /corregir identificador/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/34208241 queda disponible para su propio expediente/i)).toBeDefined(),
+    );
   });
 });

@@ -24,8 +24,31 @@ import { Aviso, Btn, Campo, Chip, Input, Textarea } from "../ui";
  * explícitamente. El formulario NUNCA manda `absorbCaseId` por su cuenta.
  */
 
-const MOTIVO = "COUNTERPART_CONFIRMED_ID_CORRECTION";
-const MOTIVO_LEGIBLE = "La contraparte confirmó que el identificador era el equivocado";
+type Modo = "RECTIFY_ID" | "REASSIGN_CASE";
+
+/**
+ * LOS DOS ERRORES, dichos como los entiende quien los corrige.
+ *
+ * La diferencia no es de matiz: decide si el identificador anterior queda
+ * libre para el trámite que de verdad lo lleva. Elegir mal el modo A cuando
+ * era B deja a un trámite real sin poder existir nunca.
+ */
+const MODOS: { valor: Modo; titulo: string; explicacion: string; consecuencia: string }[] = [
+  {
+    valor: "RECTIFY_ID",
+    titulo: "El identificador anterior era incorrecto",
+    explicacion: "No corresponde a ningún trámite real y deja de utilizarse.",
+    consecuencia: "El identificador anterior queda ligado a este expediente como historia.",
+  },
+  {
+    valor: "REASSIGN_CASE",
+    titulo: "Los antecedentes pertenecen a otro trámite",
+    explicacion:
+      "El identificador anterior SÍ es un trámite real y sigue esperando su propio expediente.",
+    consecuencia:
+      "El identificador anterior QUEDARÁ DISPONIBLE para recibir su propio expediente.",
+  },
+];
 
 /** El rechazo del backend, dicho en cristiano. La clave es `details[0].issue`. */
 const RECHAZO: Record<string, string> = {
@@ -38,7 +61,8 @@ const RECHAZO: Record<string, string> = {
     "El expediente de destino tiene una aprobación médica. No se absorbe: eso retiraría un pronunciamiento.",
   CASE_SIGNED: "El expediente de destino tiene un informe firmado. No se absorbe.",
   CASE_SUPERSEDED: "Este expediente ya fue absorbido por otro: no puede rectificar su identificador.",
-  ALREADY_CANONICAL: "El expediente ya se identifica con ese número.",
+  ALREADY_CURRENT: "El expediente ya se identifica con ese número.",
+  NO_ACTIVE_REFERENCE: "Este expediente no tiene un identificador vigente que corregir.",
   AMBIGUOUS_TARGET:
     "Ese número lo ocupan varios expedientes activos. Hay que resolver la ambigüedad antes de rectificar.",
   NO_CASE_TO_ABSORB: "Se marcó absorber, pero ningún expediente activo lleva ese número.",
@@ -67,6 +91,7 @@ interface Props {
 }
 
 export function RectificarId({ caso, onCerrar, onHecho }: Props) {
+  const [modo, setModo] = useState<Modo | null>(null);
   const [nuevoId, setNuevoId] = useState("");
   const [nota, setNota] = useState("");
   const [absorber, setAbsorber] = useState(false);
@@ -82,7 +107,13 @@ export function RectificarId({ caso, onCerrar, onHecho }: Props) {
   const destinoComprobado = buscado === nuevoId.trim();
   const faltaConfirmar = ocupante !== null && !absorber;
   const puedeEnviar =
-    idValido && notaValida && destinoComprobado && !faltaConfirmar && !enviando && !buscando;
+    modo !== null &&
+    idValido &&
+    notaValida &&
+    destinoComprobado &&
+    !faltaConfirmar &&
+    !enviando &&
+    !buscando;
 
   /** Quién ocupa el número de destino. Se consulta ANTES de pedir nada más. */
   async function comprobarDestino() {
@@ -110,20 +141,24 @@ export function RectificarId({ caso, onCerrar, onHecho }: Props) {
     setEnviando(true);
     setError(null);
     try {
-      await api(`/admin/cases/${caso.caseId}/rectify-external-id`, {
+      await api(`/admin/cases/${caso.caseId}/correct-identity`, {
         json: {
-          canonicalExternalCaseId: nuevoId.trim(),
-          reason: MOTIVO,
+          mode: modo,
+          targetExternalCaseId: nuevoId.trim(),
           note: nota.trim(),
           // Sólo va cuando el administrador lo confirmó marcándolo.
           ...(ocupante && absorber ? { absorbCaseId: ocupante.caseId } : {}),
         },
       });
       await invalidar.identificadorRectificado(caso.caseId);
+      const liberado =
+        modo === "REASSIGN_CASE"
+          ? ` El identificador ${caso.externalCaseId} queda disponible para su propio expediente.`
+          : "";
       onHecho(
-        ocupante && absorber
-          ? `Identificador rectificado a ${nuevoId.trim()}. El expediente ${ocupante.externalCaseId} quedó absorbido.`
-          : `Identificador rectificado a ${nuevoId.trim()}.`,
+        (ocupante && absorber
+          ? `Identificador corregido a ${nuevoId.trim()}. El expediente ${ocupante.externalCaseId} quedó absorbido.`
+          : `Identificador corregido a ${nuevoId.trim()}.`) + liberado,
       );
       onCerrar();
     } catch (e) {
@@ -138,7 +173,7 @@ export function RectificarId({ caso, onCerrar, onHecho }: Props) {
   return (
     <div className="mt-3 space-y-3 rounded-lg border border-[var(--atm-linea)] bg-[var(--atm-fondo)] p-3">
       <div className="text-xs text-zinc-600">
-        <p className="font-medium text-zinc-800">Rectificar identificador de trámite</p>
+        <p className="font-medium text-zinc-800">Corregir identificador de trámite</p>
         <p className="mt-1">
           El número actual <span className="font-mono">{caso.externalCaseId}</span> se conserva como
           histórico y no se reescribe: es el que consta en los informes ya emitidos. El nuevo pasa a
@@ -148,6 +183,40 @@ export function RectificarId({ caso, onCerrar, onHecho }: Props) {
             : ""}
         </p>
       </div>
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium text-zinc-600">Tipo de corrección</legend>
+        {MODOS.map((m) => (
+          <label
+            key={m.valor}
+            className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-xs ${
+              modo === m.valor
+                ? "border-[var(--atm-azul)] bg-white"
+                : "border-[var(--atm-linea)] bg-white/60"
+            }`}
+          >
+            <input
+              type="radio"
+              name="modo-correccion"
+              className="mt-0.5"
+              value={m.valor}
+              checked={modo === m.valor}
+              onChange={() => setModo(m.valor)}
+            />
+            <span>
+              <span className="block font-medium text-zinc-800">{m.titulo}</span>
+              <span className="block text-zinc-600">{m.explicacion}</span>
+              <span
+                className={`mt-1 block ${
+                  m.valor === "REASSIGN_CASE" ? "font-medium text-amber-800" : "text-zinc-500"
+                }`}
+              >
+                {m.consecuencia}
+              </span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Campo label="Identificador actual">
@@ -179,12 +248,6 @@ export function RectificarId({ caso, onCerrar, onHecho }: Props) {
           </div>
         </Campo>
       </div>
-
-      <Campo label="Motivo">
-        <div className="rounded-md border border-[var(--atm-linea)] bg-white px-3 py-2 text-xs text-zinc-700">
-          {MOTIVO_LEGIBLE}
-        </div>
-      </Campo>
 
       <Campo
         label="Justificación"
@@ -246,9 +309,12 @@ export function RectificarId({ caso, onCerrar, onHecho }: Props) {
           Cancelar
         </Btn>
         <Btn variante="primary" className="px-2.5 py-1 text-xs" disabled={!puedeEnviar} onClick={enviar}>
-          {enviando ? "Rectificando…" : "Rectificar identificador"}
+          {enviando ? "Corrigiendo…" : "Corregir identificador"}
         </Btn>
-        {!destinoComprobado && idValido && (
+        {modo === null && (
+          <span className="text-xs text-zinc-500">Elige primero el tipo de corrección.</span>
+        )}
+        {modo !== null && !destinoComprobado && idValido && (
           <span className="text-xs text-zinc-500">Comprueba el identificador de destino primero.</span>
         )}
         {faltaConfirmar && (
