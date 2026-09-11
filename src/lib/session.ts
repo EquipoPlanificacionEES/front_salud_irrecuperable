@@ -24,6 +24,23 @@ export const COOKIE_CSRF = "sir_csrf";
 
 const BACKEND = (process.env.BACKEND_URL ?? "").replace(/\/$/, "");
 
+/**
+ * UN ÁMBITO EN EL QUE LA PERSONA PUEDE TRABAJAR.
+ *
+ * Viene del backend y sirve SÓLO para decidir qué enseñar: elegir uno aquí no
+ * concede nada. El backend vuelve a comprobar membresía y alcance en cada
+ * petición, así que un ámbito manipulado en el cliente no abre ninguna puerta.
+ */
+export interface Ambito {
+  contractId: string;
+  contractCode: string;
+  contractName: string;
+  regionId: string | null;
+  regionCode: string | null;
+  regionName: string | null;
+  roles: string[];
+}
+
 export interface Sesion {
   uid: string;
   rol: Rol; // rol principal (el primero que trae el backend)
@@ -33,6 +50,8 @@ export interface Sesion {
   contratoId: string;
   contrato: string;
   doctorProfileId: string | null;
+  /** Dónde puede trabajar. Vacío = no puede operar en ningún sitio. */
+  ambitos: Ambito[];
 }
 
 interface MeResponse {
@@ -41,6 +60,7 @@ interface MeResponse {
   displayName: string;
   roles: string[];
   tenant?: { contractId?: string; contractName?: string };
+  scopes?: Ambito[];
   doctorProfile?: { id?: string } | null;
 }
 
@@ -65,6 +85,7 @@ export async function verificarSesion(sirSession: string | undefined): Promise<S
       contratoId: u.tenant?.contractId ?? "",
       contrato: u.tenant?.contractName ?? "",
       doctorProfileId: u.doctorProfile?.id ?? null,
+      ambitos: u.scopes ?? [],
     };
   } catch {
     return null;

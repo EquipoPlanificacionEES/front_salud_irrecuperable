@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCaseReport, useDoctorInbox, useInvalidar } from "@/lib/queries";
+import { useCaseReport, useCita, useDoctorInbox, useInvalidar, usePeritaje } from "@/lib/queries";
 import { queryKeys } from "@/lib/query-keys";
 import { FichaSkeleton, Refrescando } from "@/components/Skeleton";
 import {
@@ -14,6 +14,9 @@ import {
   type Borrador,
   type FormularioInforme,
 } from "./EditorInforme";
+import { FormularioPeritaje } from "./FormularioPeritaje";
+import { FueraDeAmbito } from "./FueraDeAmbito";
+import { PanelCita } from "./PanelCita";
 import { api, ApiFallo } from "@/lib/api";
 import {
   type DocumentoInforme,
@@ -127,6 +130,14 @@ interface Report {
     canApprove: boolean;
     canResolveAndApprove: boolean;
     hasActiveSignature: boolean;
+    /**
+     * Este expediente se tramita con peritaje telemático. LO DECIDE EL SERVIDOR,
+     * por el mismo motivo que el resto de capacidades: preguntarlo aquí sería
+     * meter en la pantalla una decisión que cambia con cada contrato nuevo.
+     *
+     * Opcional para no romper una caché con la forma anterior.
+     */
+    requiresTelematicAssessment?: boolean;
     /** El documento final está emitido y esta sesión puede descargarlo. */
     canDownloadSigned: boolean;
   };
@@ -285,6 +296,25 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * informe y un expediente CON informe se mostraba como si no lo tuviera.
    */
   const minima = sinInforme ? (enBandeja ?? null) : null;
+
+  /**
+   * LA CITA Y EL PERITAJE DEL EXPEDIENTE.
+   *
+   * Las dos se piden siempre y el BACKEND decide si existen: un expediente que
+   * no se tramita con peritaje telemático responde 404 o null, y los bloques no
+   * se pintan. Preguntar aquí «¿es de Maule?» habría metido en la pantalla una
+   * decisión que pertenece al perfil operativo del ámbito, y que cambiaría cada
+   * vez que entrara un contrato nuevo.
+   */
+  // SÓLO si el expediente lo lleva. Un expediente documental no gasta dos
+  // peticiones en preguntar por recursos que no existen.
+  const conPeritaje = informe.data?.capabilities.requiresTelematicAssessment === true;
+  const citaQ = useCita(caseId, conPeritaje);
+  const peritajeQ = usePeritaje(caseId, conPeritaje);
+  const cita = citaQ.data ?? null;
+  // Un 404 o un 422 aquí no son un error de la ficha: son la respuesta de que
+  // este expediente no lleva peritaje. Se traduce a «no hay», no a una alerta.
+  const peritaje = peritajeQ.data ?? null;
 
   const error = (() => {
     if (!informe.error) return null;
@@ -651,6 +681,25 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           )}
         </p>
       )}
+
+      {/*
+        LA CITA Y EL PERITAJE, cuando el expediente los tiene.
+
+        NO hay ninguna condición por región aquí. Un expediente que no se
+        tramita con peritaje telemático devuelve `null` en las dos consultas y
+        estos bloques no existen — que es cómo Valparaíso sigue viéndose
+        exactamente igual sin que esta pantalla sepa qué es Valparaíso.
+      */}
+      {cita && <PanelCita cita={cita} />}
+      {peritaje && (peritaje.fields?.length ?? 0) > 0 && (
+        <FormularioPeritaje caseId={caseId} peritaje={peritaje} />
+      )}
+      {/*
+        SÓLO mientras el peritaje siga abierto. Una vez completado, la salida
+        del circuito ya no es ésta: el expediente tiene un pronunciamiento que
+        alguien escribió.
+      */}
+      {peritaje?.status === "DRAFT" && <FueraDeAmbito caseId={caseId} />}
 
       {/* EL EDITOR, o el documento. Mientras se corrige se enseña el
           formulario que describe el servidor; al salir, el documento otra vez.

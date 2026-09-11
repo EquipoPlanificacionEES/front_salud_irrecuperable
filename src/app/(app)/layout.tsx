@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           correo: sesion.correo,
           contrato: sesion.contrato,
           contratoId: sesion.contratoId,
+          ambitos: sesion.ambitos,
           doctorProfileId: sesion.doctorProfileId,
         }}
       >

@@ -411,3 +411,69 @@ export interface AdminDoctor {
   professionalCode: string | null;
   status: "ACTIVE" | "INACTIVE";
 }
+
+// ---------------------------------------------------------------------------
+// Peritaje médico telemático y agendamiento
+// ---------------------------------------------------------------------------
+
+/**
+ * EL PERITAJE, TAL COMO LO DESCRIBE EL SERVIDOR.
+ *
+ * `values` es un mapa abierto a propósito: los campos los define un PERFIL
+ * versionado en el backend, y el formulario los pinta sin conocer ninguno por
+ * nombre. Escribir aquí la lista de campos crearía una segunda definición que
+ * se separaría de la primera en cuanto se añadiera uno.
+ */
+export interface PeritajeFaltante {
+  key: string;
+  label: string;
+  issue: string;
+}
+
+export interface PeritajeCampo {
+  key: string;
+  label: string;
+  kind: string;
+  sectionId: string;
+  /** Nunca exigible al completar. La pantalla lo ROTULA, no lo decide. */
+  optional: boolean;
+  options: { value: string; label: string }[];
+}
+
+export interface PeritajeSeccion {
+  id: string;
+  title: string;
+}
+
+export interface Peritaje {
+  id: string;
+  status: "DRAFT" | "COMPLETED";
+  /** La que se leyó. Viaja de vuelta al guardar para detectar pisadas. */
+  version: number;
+  values: Record<string, string>;
+  formProfileKey: string;
+  formSchemaVersion: string;
+  /** Secciones y campos los DESCRIBE EL SERVIDOR. Ver PeritajeCampo. */
+  sections: PeritajeSeccion[];
+  fields: PeritajeCampo[];
+  lastSavedAt: string;
+  completedAt: string | null;
+  /** Qué falta para poder cerrar. Lo calcula el servidor, no la pantalla. */
+  missingForCompletion: PeritajeFaltante[];
+  canComplete: boolean;
+}
+
+export interface Cita {
+  id: string;
+  caseId: string;
+  status:
+    | "PENDING_CONTACT" | "CONTACTED" | "SCHEDULED" | "CONFIRMED"
+    | "COMPLETED" | "NO_SHOW" | "CANCELLED" | "RESCHEDULED";
+  modality: "TELEMATIC" | "IN_PERSON";
+  scheduledAt: string | null;
+  durationMinutes: number | null;
+  timezone: string;
+  meetingUrl: string | null;
+  doctorProfileId: string | null;
+  coordinationNote: string | null;
+}

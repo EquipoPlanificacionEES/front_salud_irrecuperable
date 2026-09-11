@@ -1,11 +1,13 @@
 "use client";
 
-import { useQueryClient, useQuery, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery, type QueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { GC, STALE, queryKeys, type AdminCasesFiltros, type AdminReportsFiltros } from "./query-keys";
 import type {
   AdminDoctor,
   AdminUser,
+  Cita,
+  Peritaje,
   AssignmentContext,
   BatchListItem,
   DoctorWorkload,
@@ -365,4 +367,115 @@ export function invalidacionesDe(qc: QueryClient) {
 /** Azúcar para usarlo dentro de un componente. */
 export function useInvalidar() {
   return invalidacionesDe(useQueryClient());
+}
+
+// ---------------------------------------------------------------------------
+// Peritaje telemático y cita
+// ---------------------------------------------------------------------------
+
+/**
+ * EL PERITAJE DEL EXPEDIENTE.
+ *
+ * `staleTime: Infinity` no es descuido: es lo único de la aplicación que el
+ * usuario está ESCRIBIENDO, y un refetch en mitad de la redacción reemplazaría
+ * el formulario por lo que hay en servidor, llevándose por delante lo escrito.
+ */
+export function usePeritaje(caseId: string, habilitado: boolean) {
+  return useQuery({
+    queryKey: queryKeys.cases.peritaje(caseId),
+    queryFn: () => api<Peritaje>(`/cases/${caseId}/telematic-assessment`),
+    enabled: habilitado,
+    staleTime: STALE.peritaje,
+    gcTime: GC.corto,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useCita(caseId: string, habilitado: boolean) {
+  return useQuery({
+    queryKey: queryKeys.cases.cita(caseId),
+    queryFn: () => api<Cita | null>(`/cases/${caseId}/appointment`),
+    enabled: habilitado,
+    staleTime: STALE.cita,
+    gcTime: GC.corto,
+  });
+}
+
+/**
+ * GUARDA EL BORRADOR. Parcial y acumulativo.
+ *
+ * Manda `expectedVersion` —la que se leyó— y SÓLO los campos tocados. El 409 no
+ * se traga: se propaga para que la pantalla avise en vez de perder texto en
+ * silencio.
+ */
+export function useGuardarBorrador(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cuerpo: { expectedVersion: number; values: Record<string, string> }) =>
+      api<Peritaje>(`/cases/${caseId}/telematic-assessment/draft`, {
+        method: "PUT",
+        json: cuerpo,
+      }),
+    onSuccess: (fresco) => {
+      // Se escribe la respuesta en la caché en vez de invalidar: invalidar
+      // dispararía un refetch que volvería a montar el formulario mientras el
+      // médico sigue escribiendo.
+      qc.setQueryData(queryKeys.cases.peritaje(caseId), fresco);
+    },
+  });
+}
+
+export function useCompletarPeritaje(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<Peritaje>(`/cases/${caseId}/telematic-assessment/complete`, { method: "POST" }),
+    onSuccess: (fresco) => {
+      qc.setQueryData(queryKeys.cases.peritaje(caseId), fresco);
+      // Completar cambia lo que el informe puede decir: el documento se recompone.
+      void qc.invalidateQueries({ queryKey: queryKeys.cases.report(caseId) });
+    },
+  });
+}
+
+/** Devuelve el expediente por no ser materia de salud mental. */
+export function useDevolverFueraDeAmbito(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cuerpo: { reason: string }) =>
+      api<{ holdId: string }>(`/cases/${caseId}/telematic-assessment/refer-out-of-scope`, {
+        json: { ...cuerpo, confirm: true },
+      }),
+    onSuccess: () => {
+      // El expediente queda retenido: cambia la ficha entera y la bandeja.
+      void qc.invalidateQueries({ queryKey: queryKeys.cases.report(caseId) });
+      void qc.invalidateQueries({ queryKey: queryKeys.doctor.inbox() });
+    },
+  });
+}
+
+/**
+ * AGENDAMIENTO desde administración.
+ *
+ * Crear y modificar son dos llamadas distintas porque el backend las separa: la
+ * primera abre la cita del expediente y la segunda deja constancia de lo que
+ * cambió. Fundirlas en un "guardar" único perdería el historial de
+ * reagendamientos, que es el dato que coordinación necesita.
+ */
+export function useCrearCita(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cuerpo: Record<string, unknown>) =>
+      api<Cita>(`/cases/${caseId}/appointment`, { json: cuerpo }),
+    onSuccess: (c) => qc.setQueryData(queryKeys.cases.cita(caseId), c),
+  });
+}
+
+export function useActualizarCita(caseId: string, appointmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cuerpo: Record<string, unknown>) =>
+      api<Cita>(`/appointments/${appointmentId}`, { method: "PATCH", json: cuerpo }),
+    onSuccess: (c) => qc.setQueryData(queryKeys.cases.cita(caseId), c),
+  });
 }
