@@ -453,3 +453,29 @@ export function useDevolverFueraDeAmbito(caseId: string) {
     },
   });
 }
+
+/**
+ * AGENDAMIENTO desde administración.
+ *
+ * Crear y modificar son dos llamadas distintas porque el backend las separa: la
+ * primera abre la cita del expediente y la segunda deja constancia de lo que
+ * cambió. Fundirlas en un "guardar" único perdería el historial de
+ * reagendamientos, que es el dato que coordinación necesita.
+ */
+export function useCrearCita(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cuerpo: Record<string, unknown>) =>
+      api<Cita>(`/cases/${caseId}/appointment`, { json: cuerpo }),
+    onSuccess: (c) => qc.setQueryData(queryKeys.cases.cita(caseId), c),
+  });
+}
+
+export function useActualizarCita(caseId: string, appointmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cuerpo: Record<string, unknown>) =>
+      api<Cita>(`/appointments/${appointmentId}`, { method: "PATCH", json: cuerpo }),
+    onSuccess: (c) => qc.setQueryData(queryKeys.cases.cita(caseId), c),
+  });
+}
