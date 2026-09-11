@@ -42,6 +42,19 @@ export function FormularioPeritaje({ caseId, peritaje }: { caseId: string; perit
   const [conflicto, setConflicto] = useState<string | null>(null);
   const [errores, setErrores] = useState<Peritaje["missingForCompletion"]>([]);
 
+  /**
+   * LA DEFINICIÓN PUEDE NO VENIR, y eso no puede tumbar la ficha.
+   *
+   * Un backend anterior, una respuesta a medias o un 404 traducido dejan el
+   * formulario sin secciones. Antes eso reventaba el render y con él TODO el
+   * expediente en pantalla — el médico perdía la ficha clínica por un
+   * formulario que ni siquiera le correspondía. Se degrada a «no hay campos»,
+   * que es la verdad.
+   */
+  const secciones = peritaje.sections ?? [];
+  const campos = peritaje.fields ?? [];
+  const faltantes = peritaje.missingForCompletion ?? [];
+
   const guardar = useGuardarBorrador(caseId);
   const completar = useCompletarPeritaje(caseId);
   const cerrado = peritaje.status === "COMPLETED";
@@ -91,18 +104,18 @@ export function FormularioPeritaje({ caseId, peritaje }: { caseId: string; perit
     });
   }, [completar]);
 
-  const pendientes = errores.length > 0 ? errores : peritaje.missingForCompletion;
+  const pendientes = errores.length > 0 ? errores : faltantes;
 
   return (
     <div className="space-y-3">
-      {peritaje.sections.map((seccion) => (
+      {secciones.map((seccion) => (
         <section
           key={seccion.id}
           className="overflow-hidden rounded-xl border border-[var(--atm-linea)] bg-white shadow-sm"
         >
           <h4 className="px-5 py-3 text-sm font-semibold text-zinc-800">{seccion.title}</h4>
           <div className="grid gap-4 border-t border-[var(--atm-linea)] px-5 py-4 sm:grid-cols-2">
-            {peritaje.fields.filter((c) => c.sectionId === seccion.id).map((campo) => (
+            {campos.filter((c) => c.sectionId === seccion.id).map((campo) => (
               <label
                 key={campo.key}
                 className={campo.kind === "LONG_TEXT" ? "block sm:col-span-2" : "block"}
