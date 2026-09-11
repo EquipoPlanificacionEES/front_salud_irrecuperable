@@ -39,6 +39,10 @@ export const queryKeys = {
     report: (caseId: string) => ["cases", caseId, "report"] as const,
     /** `GET /reports/{reportId}/manual-form`. */
     manualForm: (reportId: string) => ["cases", "manual-form", reportId] as const,
+    /** `GET /cases/{id}/telematic-assessment` — el peritaje y su borrador. */
+    peritaje: (caseId: string) => ["cases", caseId, "telematic-assessment"] as const,
+    /** `GET /cases/{id}/appointment` — la cita vigente, o null. */
+    cita: (caseId: string) => ["cases", caseId, "appointment"] as const,
   },
   admin: {
     todo: () => ["admin"] as const,
@@ -83,6 +87,17 @@ export const STALE = {
    */
   caseReport: 5_000,
   manualForm: 0,
+  /**
+   * EL BORRADOR NO SE REVALIDA SOLO.
+   *
+   * Es lo único de esta aplicación que el usuario está ESCRIBIENDO. Un refetch
+   * en mitad de la redacción reemplazaría el formulario por lo que hay en
+   * servidor y se llevaría por delante lo que el médico llevaba escrito. Se
+   * recarga cuando él lo pide, o tras un guardado.
+   */
+  peritaje: Infinity,
+  /** La mueve coordinación, no el médico. */
+  cita: 30_000,
   /** Incidencia administrativa: varios administradores pueden actuar a la vez. */
   holds: 15_000,
   /** Los mueven las asignaciones y el pipeline. */
