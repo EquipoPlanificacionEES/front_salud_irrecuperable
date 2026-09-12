@@ -18,7 +18,11 @@ export interface SesionCliente {
   nombre: string;
   correo: string;
   contrato: string;
+  /** Contrato de ORIGEN. Quieto aunque se cambie de ámbito. */
   contratoId: string;
+  /** Dónde se está trabajando AHORA. Lo que el selector debe reflejar. */
+  activoContractId: string;
+  activoRegionId: string | null;
   doctorProfileId: string | null;
   /** Dónde puede trabajar. Lo resuelve el backend; aquí sólo se pinta. */
   ambitos: Ambito[];

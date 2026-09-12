@@ -47,8 +47,16 @@ export interface Sesion {
   roles: Rol[];
   nombre: string;
   correo: string;
+  /** Contrato de ORIGEN de la cuenta. No se mueve al cambiar de ámbito. */
   contratoId: string;
   contrato: string;
+  /**
+   * DÓNDE SE ESTÁ TRABAJANDO AHORA. Es lo único con lo que el selector puede
+   * decir la verdad: `contratoId` es el de origen y se queda quieto aunque la
+   * sesión esté operando en otra región.
+   */
+  activoContractId: string;
+  activoRegionId: string | null;
   doctorProfileId: string | null;
   /** Dónde puede trabajar. Vacío = no puede operar en ningún sitio. */
   ambitos: Ambito[];
@@ -61,6 +69,8 @@ interface MeResponse {
   roles: string[];
   tenant?: { contractId?: string; contractName?: string };
   scopes?: Ambito[];
+  /** El ámbito EFECTIVO. Puede faltar si el backend aún no lo publica. */
+  activeScope?: { contractId?: string; regionId?: string | null };
   doctorProfile?: { id?: string } | null;
 }
 
@@ -84,6 +94,11 @@ export async function verificarSesion(sirSession: string | undefined): Promise<S
       correo: u.email,
       contratoId: u.tenant?.contractId ?? "",
       contrato: u.tenant?.contractName ?? "",
+      // Si el backend todavía no publica `activeScope`, el de origen es la
+      // mejor respuesta disponible y es la que había antes: así esta versión
+      // funciona contra el backend viejo y contra el nuevo.
+      activoContractId: u.activeScope?.contractId ?? u.tenant?.contractId ?? "",
+      activoRegionId: u.activeScope?.regionId ?? null,
       doctorProfileId: u.doctorProfile?.id ?? null,
       ambitos: u.scopes ?? [],
     };

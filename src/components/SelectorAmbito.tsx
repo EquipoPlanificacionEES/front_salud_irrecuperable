@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -26,22 +26,52 @@ function nombre(a: Ambito): string {
   return a.regionName ?? a.contractName;
 }
 
+/** La identidad de un ámbito es la PAREJA contrato+región, no el contrato. */
+function clave(contractId: string, regionId: string | null): string {
+  return `${contractId}|${regionId ?? ""}`;
+}
+
 export function SelectorAmbito({
   ambitos,
   activoContractId,
+  activoRegionId,
 }: {
   ambitos: Ambito[];
+  /** El ámbito EFECTIVO según el servidor. No el contrato de origen. */
   activoContractId: string;
+  activoRegionId: string | null;
 }) {
   const router = useRouter();
   const qc = useQueryClient();
   const [cambiando, setCambiando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * EL DESTINO MIENTRAS EL CAMBIO ESTÁ EN VUELO.
+   *
+   * El servidor tarda en reflejar el cambio: entre el POST y el `refresh` que
+   * lo trae de vuelta hay un hueco en el que las props siguen diciendo el
+   * ámbito anterior. Sin esto, el `<select>` volvía visualmente atrás en ese
+   * hueco. Se suelta cuando el servidor CONFIRMA el destino, no antes, para
+   * que una respuesta tardía del ámbito viejo no pueda revertir la pantalla.
+   */
+  const [destino, setDestino] = useState<string | null>(null);
+
+  const claveServidor = clave(activoContractId, activoRegionId);
+
+  useEffect(() => {
+    if (destino !== null && destino === claveServidor) setDestino(null);
+  }, [destino, claveServidor]);
 
   if (ambitos.length === 0) return null;
 
   const activo =
-    ambitos.find((a) => a.contractId === activoContractId) ?? ambitos[0];
+    ambitos.find((a) => clave(a.contractId, a.regionId) === claveServidor) ??
+    ambitos.find((a) => a.contractId === activoContractId) ??
+    ambitos[0];
+
+  // Lo que se PINTA: el destino en vuelo manda; si no hay, la verdad del
+  // servidor. Nunca un estado local que nadie confirmó.
+  const mostrado = destino ?? clave(activo.contractId, activo.regionId);
 
   // UN SOLO ÁMBITO: se entra directo y sólo se deja constancia de dónde.
   if (ambitos.length === 1) {
@@ -53,9 +83,18 @@ export function SelectorAmbito({
   }
 
   async function cambiar(a: Ambito) {
-    if (a.contractId === activo.contractId && a.regionId === activo.regionId) return;
+    // UN CAMBIO A LA VEZ. `disabled` ya lo impide con un ratón, pero el
+    // invariante no puede depender de que el DOM colabore: dos POST cruzados
+    // dejarían la sesión en el ámbito que contestara último, que no tiene por
+    // qué ser el último que la persona eligió.
+    if (cambiando) return;
+    const objetivo = clave(a.contractId, a.regionId);
+    if (objetivo === mostrado) return;
     setCambiando(true);
     setError(null);
+    // Se pinta el destino YA: durante el viaje la pantalla dice a dónde va, no
+    // de dónde viene.
+    setDestino(objetivo);
     try {
       await api("/auth/active-scope", {
         json: { contractId: a.contractId, regionId: a.regionId },
@@ -76,6 +115,9 @@ export function SelectorAmbito({
       qc.clear();
       router.refresh();
     } catch {
+      // FALLÓ: se devuelve la pantalla a la verdad del servidor. Una interfaz
+      // que siguiera marcando el destino estaría mintiendo sobre dónde trabaja.
+      setDestino(null);
       setError("No se pudo cambiar de ámbito.");
     } finally {
       setCambiando(false);
@@ -91,18 +133,17 @@ export function SelectorAmbito({
         id="selector-ambito"
         data-testid="selector-ambito"
         className="rounded-lg border border-[var(--atm-linea)] bg-white px-2 py-1 text-xs text-zinc-800"
-        value={`${activo.contractId}|${activo.regionId ?? ""}`}
+        value={mostrado}
         disabled={cambiando}
         onChange={(e) => {
-          const [contractId, regionId] = e.target.value.split("|");
           const elegido = ambitos.find(
-            (a) => a.contractId === contractId && (a.regionId ?? "") === regionId,
+            (a) => clave(a.contractId, a.regionId) === e.target.value,
           );
           if (elegido) void cambiar(elegido);
         }}
       >
         {ambitos.map((a) => (
-          <option key={`${a.contractId}|${a.regionId ?? ""}`} value={`${a.contractId}|${a.regionId ?? ""}`}>
+          <option key={clave(a.contractId, a.regionId)} value={clave(a.contractId, a.regionId)}>
             {nombre(a)}
           </option>
         ))}

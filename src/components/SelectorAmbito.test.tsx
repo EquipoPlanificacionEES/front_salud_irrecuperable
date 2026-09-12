@@ -45,7 +45,7 @@ function pintar(ui: React.ReactElement, client = new QueryClient()) {
 
 describe("selector de ámbito", () => {
   it("con UN ámbito no hay nada que elegir: sólo se dice dónde se está", () => {
-    pintar(<SelectorAmbito ambitos={[ambito()]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito()]} activoContractId="c-valpo" activoRegionId="r-valpo" />);
     expect(screen.queryByTestId("selector-ambito")).toBeNull();
     // Pero SÍ queda evidente la región: que no lo esté es lo que hace que
     // alguien firme creyendo que el expediente es de otra.
@@ -53,7 +53,7 @@ describe("selector de ámbito", () => {
   });
 
   it("con DOS ámbitos aparece el selector, con los dos", () => {
-    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" activoRegionId="r-valpo" />);
     const select = screen.getByTestId("selector-ambito") as HTMLSelectElement;
     expect(select.options.length).toBe(2);
     expect([...select.options].map((o) => o.textContent)).toEqual([
@@ -63,7 +63,7 @@ describe("selector de ámbito", () => {
 
   it("cambiar de ámbito lo pide AL SERVIDOR y recarga", async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 204, text: () => Promise.resolve("") } as Response);
-    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" activoRegionId="r-valpo" />);
 
     fireEvent.change(screen.getByTestId("selector-ambito"), {
       target: { value: "c-maule|r-maule" },
@@ -83,7 +83,7 @@ describe("selector de ámbito", () => {
       ok: false, status: 403,
       text: () => Promise.resolve(JSON.stringify({ error: { message: "sin acceso" } })),
     } as Response);
-    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />);
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" activoRegionId="r-valpo" />);
 
     fireEvent.change(screen.getByTestId("selector-ambito"), {
       target: { value: "c-maule|r-maule" },
@@ -99,7 +99,7 @@ describe("selector de ámbito", () => {
     // Un dato del ámbito anterior, ya en caché.
     client.setQueryData(["cases", "c1", "report"], { caseId: "c1" });
 
-    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" />, client);
+    pintar(<SelectorAmbito ambitos={[ambito(), maule]} activoContractId="c-valpo" activoRegionId="r-valpo" />, client);
     fireEvent.change(screen.getByTestId("selector-ambito"), {
       target: { value: "c-maule|r-maule" },
     });
@@ -112,7 +112,110 @@ describe("selector de ámbito", () => {
   });
 
   it("sin ámbitos no se pinta nada: no puede operar en ningún sitio", () => {
-    const { container } = pintar(<SelectorAmbito ambitos={[]} activoContractId="" />);
+    const { container } = pintar(<SelectorAmbito ambitos={[]} activoContractId="" activoRegionId={null} />);
     expect(container.textContent).toBe("");
+  });
+  /**
+   * EL DEFECTO QUE LLEGÓ A PRODUCCIÓN, FIJADO.
+   *
+   * El selector recibía el contrato de ORIGEN de la cuenta como si fuera «dónde
+   * estoy». Tras cambiar a Maule seguía marcando Valparaíso —los datos ya eran
+   * de Maule— y volver era imposible: para el navegador, Valparaíso ya estaba
+   * elegido, así que elegirlo no disparaba ningún `change`.
+   */
+  it("C · marca el ámbito ACTIVO, no el de origen de la cuenta", () => {
+    pintar(
+      <SelectorAmbito
+        ambitos={[ambito(), maule]}
+        activoContractId="c-maule"
+        activoRegionId="r-maule"
+      />,
+    );
+    const select = screen.getByTestId("selector-ambito") as HTMLSelectElement;
+    expect(select.value).toBe("c-maule|r-maule");
+  });
+
+  it("D · desde Maule se puede VOLVER a Valparaíso: el cambio se envía", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 204, text: () => Promise.resolve("") } as Response);
+    pintar(
+      <SelectorAmbito
+        ambitos={[ambito(), maule]}
+        activoContractId="c-maule"
+        activoRegionId="r-maule"
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("selector-ambito"), {
+      target: { value: "c-valpo|r-valpo" },
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      contractId: "c-valpo", regionId: "r-valpo",
+    });
+  });
+
+  it("E · si el cambio falla, el selector vuelve al ámbito anterior", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false, status: 403,
+      text: () => Promise.resolve(JSON.stringify({ error: { message: "sin acceso" } })),
+    } as Response);
+    pintar(
+      <SelectorAmbito
+        ambitos={[ambito(), maule]}
+        activoContractId="c-valpo"
+        activoRegionId="r-valpo"
+      />,
+    );
+    const select = screen.getByTestId("selector-ambito") as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: "c-maule|r-maule" } });
+
+    await waitFor(() => expect(screen.getByText(/No se pudo cambiar/)).toBeTruthy());
+    // Ni se queda marcando el destino que nunca ocurrió.
+    expect(select.value).toBe("c-valpo|r-valpo");
+  });
+
+  it("F · mientras el cambio viaja, el selector marca el DESTINO y no retrocede", async () => {
+    // El servidor no responde todavía: es exactamente el hueco en el que las
+    // props siguen diciendo el ámbito anterior.
+    let resolver: (r: unknown) => void = () => {};
+    fetchMock.mockReturnValue(new Promise((r) => { resolver = r; }));
+    pintar(
+      <SelectorAmbito
+        ambitos={[ambito(), maule]}
+        activoContractId="c-valpo"
+        activoRegionId="r-valpo"
+      />,
+    );
+    const select = screen.getByTestId("selector-ambito") as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: "c-maule|r-maule" } });
+
+    // Aún con las props en Valparaíso, la pantalla ya dice Maule.
+    await waitFor(() => expect(select.value).toBe("c-maule|r-maule"));
+    resolver({ ok: true, status: 204, text: () => Promise.resolve("") });
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(select.value).toBe("c-maule|r-maule");
+  });
+
+  it("G · dos cambios seguidos no producen dos peticiones: se bloquea mientras viaja", async () => {
+    let resolver: (r: unknown) => void = () => {};
+    fetchMock.mockReturnValue(new Promise((r) => { resolver = r; }));
+    pintar(
+      <SelectorAmbito
+        ambitos={[ambito(), maule]}
+        activoContractId="c-valpo"
+        activoRegionId="r-valpo"
+      />,
+    );
+    const select = screen.getByTestId("selector-ambito") as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: "c-maule|r-maule" } });
+    await waitFor(() => expect(select.disabled).toBe(true));
+    fireEvent.change(select, { target: { value: "c-valpo|r-valpo" } });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolver({ ok: true, status: 204, text: () => Promise.resolve("") });
   });
 });

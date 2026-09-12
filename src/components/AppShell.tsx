@@ -27,7 +27,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span>
               {sesion.nombre} · <span className="capitalize">{sesion.rol}</span>
             </span>
-            <SelectorAmbito ambitos={sesion.ambitos} activoContractId={sesion.contratoId} />
+            <SelectorAmbito
+              ambitos={sesion.ambitos}
+              activoContractId={sesion.activoContractId}
+              activoRegionId={sesion.activoRegionId}
+            />
           </p>
         </div>
         {/* Reacciona al instante: cerrar sesión llama al backend, vacía la
