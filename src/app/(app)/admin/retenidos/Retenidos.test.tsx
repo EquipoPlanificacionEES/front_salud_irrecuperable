@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { pintarConQuery } from "@/test/utils";
 import { Retenidos } from "./Retenidos";
 import type { HeldCase } from "@/lib/backend";
@@ -20,6 +20,8 @@ const CON_INFORME: HeldCase = {
   hold: { active: true, statement: "Retenido.", reason: "SOURCE_IDENTITY_CONFLICT" },
   detail: "Dos identidades detectadas en el expediente.",
   createdAt: "2026-09-07T12:17:45.000Z",
+  batch: { batchId: "b-08", name: "SEMANA_08_2026", sequence: 8 },
+  validation: null,
   doctor: { doctorProfileId: "d1", fullName: "Profesional de prueba" },
   report: { reportId: "r1", version: 1, workflowStatus: "READY_FOR_REVIEW" },
   processing: {
@@ -104,7 +106,10 @@ describe("Retenidos · gestión administrativa", () => {
   it("muestra la retención y el procesamiento como dos cosas distintas", async () => {
     await pintar([SIN_INFORME]);
 
-    expect(screen.getByText("Documento fuente duplicado")).toBeDefined();
+    // Se busca DENTRO de la tabla: el motivo aparece también como opción del
+    // filtro, y una búsqueda global encontraría las dos.
+    const tabla = screen.getByRole("table");
+    expect(within(tabla).getByText("Documento fuente duplicado")).toBeDefined();
     // Y el fallo técnico, que es OTRA dimensión: el proveedor de IA, no el duplicado.
     expect(screen.getByText(/PROVIDER_TRANSIENT/)).toBeDefined();
     expect(screen.getByText("Sin informe")).toBeDefined();
@@ -196,5 +201,40 @@ describe("Retenidos · gestión administrativa", () => {
     vi.stubGlobal("fetch", backend([]));
     pintarConQuery(<Retenidos />);
     await waitFor(() => expect(screen.getByText(/No hay expedientes retenidos/)).toBeDefined());
+  });
+
+  it("se puede mirar UNA semana: el resto no estorba", async () => {
+    /**
+     * Retenciones mezclaba todas las semanas. Con noventa expedientes de la
+     * semana en curso, las tres retenciones de la anterior se pierden.
+     */
+    const otra: HeldCase = {
+      ...CON_INFORME,
+      holdId: "00000000-0000-4000-8000-000000000009",
+      caseId: "00000000-0000-4000-8000-000000000019",
+      externalCaseId: "34229117",
+      batch: { batchId: "b-09", name: "SEMANA_09_2026", sequence: 9 },
+      validation: { status: "IDENTITY_MISMATCH", detail: "RUT distinto", checkedAt: "2026-09-12T10:00:00.000Z" },
+    };
+    pintar([CON_INFORME, otra]);
+    await screen.findByText("34229117");
+
+    expect(screen.getByTestId("retenidos-total").textContent).toBe("2 de 2");
+
+    fireEvent.change(screen.getByTestId("filtro-semana"), { target: { value: "b-09" } });
+
+    expect(screen.getByTestId("retenidos-total").textContent).toBe("1 de 2");
+    expect(screen.queryByText("32895245")).toBeNull();
+    expect(screen.getByText("34229117")).toBeTruthy();
+  });
+
+  it("una semana sin retenciones no aparece en el desplegable", async () => {
+    // Las semanas salen de lo que hay retenido, no de un catálogo.
+    pintar([CON_INFORME]);
+    await screen.findByText("32895245");
+    const opciones = [...(screen.getByTestId("filtro-semana") as HTMLSelectElement).options].map(
+      (o) => o.textContent,
+    );
+    expect(opciones).toEqual(["Todas las semanas", "SEMANA_08_2026"]);
   });
 });

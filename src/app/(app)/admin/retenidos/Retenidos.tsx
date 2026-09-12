@@ -55,6 +55,8 @@ export function Retenidos() {
   const [reprocesar, setReprocesar] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [semana, setSemana] = useState("");
+  const [tipo, setTipo] = useState("");
 
   const errorCarga = fallo
     ? fallo instanceof ApiFallo
@@ -117,25 +119,89 @@ export function Retenidos() {
     }
   }
 
+  /**
+   * FILTRO POR SEMANA.
+   *
+   * Retenciones mezclaba todas las semanas en una lista plana, y la pregunta
+   * que de verdad se hace quien la abre —«¿qué me falta de la semana 9?»— no
+   * se podía responder sin ir expediente por expediente.
+   *
+   * Las semanas salen de lo que hay retenido, no de un catálogo: una semana sin
+   * retenciones no tiene por qué aparecer en el desplegable.
+   */
+  const semanas = [
+    ...new Map(
+      (casos ?? [])
+        .filter((c) => c.batch !== null)
+        .map((c) => [c.batch!.batchId, c.batch!]),
+    ).values(),
+  ].sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0));
+
+  const visibles = (casos ?? []).filter((c) => {
+    if (semana !== "" && c.batch?.batchId !== semana) return false;
+    if (tipo !== "" && (c.hold.reason ?? "") !== tipo) return false;
+    return true;
+  });
+
+  const tipos = [...new Set((casos ?? []).map((c) => c.hold.reason ?? "").filter((t) => t !== ""))];
+
   // Primera carga: esqueleto. Un refresco posterior mantiene la tabla.
-  if (isPending) return <TablaSkeleton filas={3} columnas={6} />;
+  if (isPending) return <TablaSkeleton filas={3} columnas={7} />;
 
   return (
     <div className="space-y-4">
       {msg && <Aviso ok={msg.ok}>{msg.texto}</Aviso>}
       {errorCarga && <Aviso ok={false}>{errorCarga}</Aviso>}
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="filtro-semana">Semana</label>
+          <select
+            id="filtro-semana"
+            data-testid="filtro-semana"
+            className="rounded-lg border border-[var(--atm-linea)] bg-white px-2 py-1 text-xs text-zinc-800"
+            value={semana}
+            onChange={(e) => setSemana(e.target.value)}
+          >
+            <option value="">Todas las semanas</option>
+            {semanas.map((b) => (
+              <option key={b.batchId} value={b.batchId}>{b.name}</option>
+            ))}
+          </select>
+          <label className="sr-only" htmlFor="filtro-tipo">Tipo</label>
+          <select
+            id="filtro-tipo"
+            data-testid="filtro-tipo"
+            className="rounded-lg border border-[var(--atm-linea)] bg-white px-2 py-1 text-xs text-zinc-800"
+            value={tipo}
+            onChange={(e) => setTipo(e.target.value)}
+          >
+            <option value="">Todos los motivos</option>
+            {tipos.map((t) => (
+              <option key={t} value={t}>{MOTIVO_LEGIBLE[t] ?? t}</option>
+            ))}
+          </select>
+          <span className="text-xs text-zinc-500" data-testid="retenidos-total">
+            {visibles.length} de {casos?.length ?? 0}
+          </span>
+        </div>
         <Refrescando visible={isFetching && !isPending} />
       </div>
 
-      <Tabla columnas={["Trámite", "Retención", "Procesamiento", "Informe", "Médico", ""]}>
-        {casos?.length === 0 && <FilaVacia cols={6}>No hay expedientes retenidos.</FilaVacia>}
-        {casos?.map((c) => (
+      <Tabla columnas={["Trámite", "Semana", "Retención", "Procesamiento", "Informe", "Médico", ""]}>
+        {visibles.length === 0 && (
+          <FilaVacia cols={7}>
+            {casos?.length === 0
+              ? "No hay expedientes retenidos."
+              : "Ninguna retención coincide con el filtro."}
+          </FilaVacia>
+        )}
+        {visibles.map((c) => (
           // `Fragment` con clave: sin ella React avisa en cada render de que las
           // filas de esta tabla no tienen identidad estable.
           <Fragment key={c.holdId}>
             <tr className="border-t border-[var(--atm-linea)]">
               <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>
+              <td className="px-4 py-2.5 text-xs text-zinc-600">{c.batch?.name ?? "—"}</td>
               <td className="px-4 py-2.5">
                 <Chip tono="obs">{MOTIVO_LEGIBLE[c.hold.reason ?? ""] ?? "Retenido"}</Chip>
               </td>
@@ -174,7 +240,7 @@ export function Retenidos() {
 
             {abierto === c.holdId && (
               <tr className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
-                <td colSpan={6} className="px-4 py-4">
+                <td colSpan={7} className="px-4 py-4">
                   <div className="space-y-3">
                     <dl className="grid grid-cols-1 gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
                       <Dato etiqueta="Retenido desde" valor={new Date(c.createdAt).toLocaleString("es-CL")} />

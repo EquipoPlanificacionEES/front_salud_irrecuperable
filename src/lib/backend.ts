@@ -80,6 +80,10 @@ export interface HeldCase {
   hold: CaseHold;
   detail: string | null;
   createdAt: string;
+  /** La semana del expediente. Null si no pertenece a ningún lote. */
+  batch: { batchId: string; name: string; sequence: number | null } | null;
+  /** El veredicto frente a la planilla, cuando el lote la exige. */
+  validation: { status: string; detail: string | null; checkedAt: string } | null;
   doctor: { doctorProfileId: string; fullName: string } | null;
   report: { reportId: string; version: number; workflowStatus: ReportWorkflowStatus | null } | null;
   processing: {
