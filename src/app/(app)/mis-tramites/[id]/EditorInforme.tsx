@@ -33,9 +33,51 @@ export interface CampoFormulario {
   readonly editable: boolean;
   readonly required: boolean;
   readonly systemDetermined: boolean;
+  /**
+   * QUÉ SE SABE DEL VALOR DEL SISTEMA. Opcional porque un backend anterior no
+   * lo manda; entonces se deduce de `systemDetermined`. Ver `disponibilidad`.
+   */
+  readonly systemAvailability?: "DETERMINED" | "NOT_DETERMINED" | "NOT_APPLICABLE";
   readonly sourceType: "SOURCE_EXTRACTION" | "ENGINE_COMPUTED" | "ENGINE_NARRATIVE" | "DOCTOR_ONLY";
   readonly correctionReasonRequired: boolean;
   readonly options?: readonly { readonly value: string; readonly label: string }[];
+}
+
+export type Disponibilidad = NonNullable<CampoFormulario["systemAvailability"]>;
+
+/**
+ * DATA_UNAVAILABLE NO ES CERO.
+ *
+ * Un cálculo que el sistema no pudo hacer llega guardado como `0` —el contador
+ * empezó en cero y nadie lo movió— y esta pantalla lo enseñaba así:
+ * «Calculado por el sistema: 0», sobre un expediente con 85 licencias cuyo
+ * estado no se pudo leer. El servidor ya lo dice (`systemAvailability`); si no
+ * lo dice, `systemDetermined: false` significa lo mismo.
+ */
+export function disponibilidad(f: CampoFormulario): Disponibilidad {
+  return f.systemAvailability ?? (f.systemDetermined ? "DETERMINED" : "NOT_DETERMINED");
+}
+
+/**
+ * EL VALOR CON EL QUE ARRANCA EL CAMPO. Lo que el médico escribió, si escribió;
+ * si no, lo del sistema SÓLO cuando el sistema lo determinó. Un «0» que nadie
+ * contó no se precarga: un backend anterior lo mandaba así.
+ */
+export function valorDePartida(f: CampoFormulario): string {
+  if (f.doctorValue !== null) return f.effectiveValue;
+  return disponibilidad(f) === "DETERMINED" ? f.effectiveValue : "";
+}
+
+/** Lo que se enseña bajo el campo como valor del sistema. Nunca un cero inventado. */
+export function textoDelSistema(f: CampoFormulario): string {
+  switch (disponibilidad(f)) {
+    case "NOT_APPLICABLE":
+      return "No aplica";
+    case "NOT_DETERMINED":
+      return f.sourceType === "SOURCE_EXTRACTION" ? "No disponible" : "No determinado por el sistema";
+    default:
+      return f.systemValue === "" ? "—" : f.systemValue;
+  }
 }
 
 export interface SeccionFormulario {
@@ -62,7 +104,7 @@ export function borradorInicial(form: FormularioInforme | null): Borrador {
   for (const s of form?.sections ?? []) {
     // Se arranca del valor que HOY se imprimiría. Así «no tocar nada» y
     // «reenviar lo mismo» son lo mismo, y el diff de abajo no manda ruido.
-    for (const f of s.fields) valores[f.key] = f.effectiveValue;
+    for (const f of s.fields) valores[f.key] = valorDePartida(f);
   }
   return { valores, motivo: "", nota: "" };
 }
@@ -76,7 +118,7 @@ export function camposModificados(
   for (const s of form?.sections ?? []) {
     for (const f of s.fields) {
       if (!f.editable) continue;
-      if ((borrador.valores[f.key] ?? "").trim() !== f.effectiveValue.trim()) salida.push(f);
+      if ((borrador.valores[f.key] ?? "").trim() !== valorDePartida(f).trim()) salida.push(f);
     }
   }
   return salida;
@@ -128,17 +170,18 @@ export function cuerpoDeCorreccion(
       clinicalAnalysis = v;
       continue;
     }
+    // `Number("")` es 0: un campo vaciado NO es un cero escrito por el médico.
     if (seccion === "I") {
       if (f.key === "ageYears") {
         const n = Number(v);
-        if (Number.isInteger(n) && n >= 0) identity[f.key] = n;
+        if (v !== "" && Number.isInteger(n) && n >= 0) identity[f.key] = n;
       } else if (v !== "") identity[f.key] = v;
       continue;
     }
     if (seccion === "II") {
       if (f.kind === "INTEGER") {
         const n = Number(v);
-        if (Number.isInteger(n) && n >= 0) figures[f.key] = n;
+        if (v !== "" && Number.isInteger(n) && n >= 0) figures[f.key] = n;
       } else if (v !== "") figureTexts[f.key] = v;
     }
   }
@@ -292,6 +335,15 @@ function Campo({
 }) {
   const largo = campo.kind === "LONG_TEXT";
   const id = `campo-${campo.key}`;
+  const determinado = disponibilidad(campo) === "DETERMINED";
+  /**
+   * «POR COMPLETAR» SÓLO LO QUE DE VERDAD BLOQUEA: un campo obligatorio vacío.
+   * Antes lo llevaba todo lo que el sistema no determinó, y un médico veía seis
+   * cifras opcionales «por completar» junto a un botón deshabilitado y concluía
+   * que eran ellas las que lo impedían. Lo que el sistema no pudo establecer se
+   * dice abajo, como dato, sin sonar a tarea pendiente.
+   */
+  const porCompletar = campo.required && valor.trim() === "";
 
   return (
     <div className={largo ? "sm:col-span-2" : ""}>
@@ -300,7 +352,7 @@ function Campo({
           {campo.label}
           {campo.required && <span className="text-[var(--atm-mal)]"> *</span>}
         </label>
-        {!campo.systemDetermined && (
+        {porCompletar && (
           <span className="text-xs font-medium text-[var(--atm-obs)]">· por completar</span>
         )}
         {modificado && (
@@ -358,10 +410,10 @@ function Campo({
       */}
       <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
         <span className="text-zinc-400">{ORIGEN[campo.sourceType]}:</span>
-        <span className="font-medium text-zinc-600">
-          {campo.systemValue === "" ? "—" : campo.systemValue}
+        <span className={determinado ? "font-medium text-zinc-600" : "italic text-zinc-500"}>
+          {textoDelSistema(campo)}
         </span>
-        {modificado && campo.systemValue !== "" && (
+        {modificado && determinado && campo.systemValue !== "" && (
           <button
             type="button"
             onClick={onRestaurar}

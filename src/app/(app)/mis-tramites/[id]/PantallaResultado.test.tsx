@@ -1056,10 +1056,13 @@ describe("PantallaResultado · formulario estructurado", () => {
 
     expect(screen.getByText("Total licencias autorizadas")).toBeDefined();
     expect(screen.getByText("Total días autorizados")).toBeDefined();
-    // El aviso marca lo que el sistema NO pudo establecer, en cualquier
-    // sección. Con este formulario: las dos cifras, el análisis, la conclusión
-    // y la evaluación.
-    expect(screen.getAllByText(/por completar/i).length).toBeGreaterThanOrEqual(2);
+    // «Por completar» marca SÓLO lo obligatorio vacío: la conclusión y la
+    // evaluación. Las dos cifras que el sistema no pudo establecer llegan con
+    // `systemDetermined: false` y "0": se dicen «No determinado por el
+    // sistema», no se precargan como cero y no parecen bloquear la ratificación.
+    expect(screen.getAllByText(/por completar/i)).toHaveLength(2);
+    expect(screen.getAllByText("No determinado por el sistema").length).toBeGreaterThanOrEqual(2);
+    expect((screen.getByLabelText("Total licencias autorizadas") as HTMLInputElement).value).toBe("");
   });
 
   it("la identificación se puede corregir, pero pide motivo antes de dejar confirmar", async () => {

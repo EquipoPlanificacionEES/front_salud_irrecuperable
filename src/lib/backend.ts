@@ -53,8 +53,10 @@ export interface ManualFormField {
   value: string;
   editable: boolean;
   required: boolean;
-  /** Falso = el sistema no lo pudo establecer; es lo que hay que completar. */
+  /** Falso = el sistema no lo pudo establecer. No lo convierte en obligatorio. */
   systemDetermined: boolean;
+  /** DETERMINED | NOT_DETERMINED | NOT_APPLICABLE. Ausente en backends anteriores. */
+  systemAvailability?: "DETERMINED" | "NOT_DETERMINED" | "NOT_APPLICABLE";
   options?: { value: string; label: string }[];
 }
 

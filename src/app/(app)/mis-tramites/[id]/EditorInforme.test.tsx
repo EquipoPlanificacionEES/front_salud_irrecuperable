@@ -255,6 +255,143 @@ describe("la evaluación", () => {
   });
 });
 
+/**
+ * DATA_UNAVAILABLE != 0.
+ *
+ * La forma del formulario de 32895245: cifras de licencias que el sistema NO
+ * pudo establecer, guardadas en cero. Todo lo de aquí es representación: la
+ * pantalla no escribe nada y no envía lo que el médico no tocó.
+ */
+describe("DATA_UNAVAILABLE != 0", () => {
+  const SIN_DATOS: FormularioInforme = {
+    reportSnapshotId: "00000000-0000-4000-8000-000000000002",
+    version: 1,
+    sections: [
+      {
+        id: "II",
+        title: "II. ANTECEDENTES",
+        fields: [
+          // Backend nuevo: lo dice explícitamente y no manda el cero.
+          campo("authorizedLicenseCount", "Total licencias autorizadas", "INTEGER", "", {
+            systemDetermined: false,
+            systemAvailability: "NOT_DETERMINED",
+          }),
+          // Backend anterior: mandaba "0" con `systemDetermined: false`.
+          campo("authorizedDaysKnown", "Total días autorizados", "INTEGER", "0", {
+            systemDetermined: false,
+          }),
+          // Un cero CONTADO.
+          campo("rejectedLicenseCount", "Licencias rechazadas", "INTEGER", "0", {
+            systemDetermined: true,
+            systemAvailability: "DETERMINED",
+          }),
+          campo("evaluationPeriodStart", "Inicio del período evaluado", "TEXT", "", {
+            sourceType: "SOURCE_EXTRACTION",
+            systemDetermined: false,
+          }),
+          campo("fulmeCie10", "FULME · CIE-10", "TEXT", "", {
+            sourceType: "SOURCE_EXTRACTION",
+            systemAvailability: "NOT_APPLICABLE",
+          }),
+        ],
+      },
+      {
+        id: "IV",
+        title: "IV. CONCLUSIÓN",
+        fields: [
+          campo("conclusion", "Conclusión general", "LONG_TEXT", "", {
+            required: true,
+            sourceType: "ENGINE_NARRATIVE",
+          }),
+        ],
+      },
+      {
+        id: "V",
+        title: "V. EVALUACIÓN",
+        fields: [
+          campo("assessment", "Evaluación", "CHOICE", "", {
+            required: true,
+            options: [
+              { value: "RECOVERABLE", label: "SALUD RECUPERABLE" },
+              { value: "IRRECOVERABLE", label: "SALUD IRRECUPERABLE" },
+            ],
+          }),
+        ],
+      },
+    ],
+  };
+
+  function BancoSinDatos() {
+    const [b, setB] = useState<Borrador>(borradorInicial(SIN_DATOS));
+    return <EditorInforme form={SIN_DATOS} borrador={b} onChange={setB} />;
+  }
+
+  const valorDe = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value;
+
+  it("un valor no determinado se presenta como «No determinado por el sistema», nunca como 0", () => {
+    render(<BancoSinDatos />);
+    expect(valorDe("Total licencias autorizadas")).toBe("");
+    // Aunque el backend anterior mande "0", no se precarga ni se enseña.
+    expect(valorDe("Total días autorizados")).toBe("");
+    // Las dos cifras, más la conclusión y la evaluación, que tampoco trae el sistema.
+    expect(screen.getAllByText("No determinado por el sistema")).toHaveLength(4);
+    // El único «0» a la vista es el cero contado.
+    expect(screen.getAllByText("0")).toHaveLength(1);
+  });
+
+  it("un 0 real sigue mostrándose 0", () => {
+    render(<BancoSinDatos />);
+    expect(valorDe("Licencias rechazadas")).toBe("0");
+    expect(screen.getByText("0")).toBeDefined();
+  });
+
+  it("un dato de lectura ausente es «No disponible», y uno que no corresponde es «No aplica»", () => {
+    render(<BancoSinDatos />);
+    expect(screen.getByText("No disponible")).toBeDefined();
+    expect(screen.getByText("No aplica")).toBeDefined();
+  });
+
+  it("«por completar» sólo en lo obligatorio y vacío: las cifras opcionales no parecen bloquear", () => {
+    render(<BancoSinDatos />);
+    // La conclusión y la evaluación, y nada más.
+    expect(screen.getAllByText(/por completar/)).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), { target: { value: "Conclusión del médico." } });
+    expect(screen.getAllByText(/por completar/)).toHaveLength(1);
+  });
+
+  it("no envía un 0 que nadie escribió", () => {
+    const b = borradorInicial(SIN_DATOS);
+    const cuerpo = cuerpoDeCorreccion(SIN_DATOS, {
+      ...b,
+      valores: { ...b.valores, conclusion: "Conclusión del médico.", assessment: "IRRECOVERABLE" },
+    });
+    expect(cuerpo).not.toBeNull();
+    expect(cuerpo).not.toHaveProperty("figures");
+    expect(camposModificados(SIN_DATOS, b)).toEqual([]);
+  });
+
+  it("vaciar un cero contado no se envía como 0", () => {
+    const b = borradorInicial(SIN_DATOS);
+    const cuerpo = cuerpoDeCorreccion(SIN_DATOS, {
+      ...b,
+      valores: {
+        ...b.valores,
+        rejectedLicenseCount: "",
+        conclusion: "Conclusión del médico.",
+        assessment: "IRRECOVERABLE",
+      },
+    });
+    expect(cuerpo).not.toHaveProperty("figures");
+  });
+
+  it("es sólo representación: el formulario recibido no cambia", () => {
+    const antes = JSON.stringify(SIN_DATOS);
+    render(<BancoSinDatos />);
+    borradorInicial(SIN_DATOS);
+    expect(JSON.stringify(SIN_DATOS)).toBe(antes);
+  });
+});
+
 describe("secciones", () => {
   it("la identificación viene plegada: no es lo que se corrige a diario", () => {
     render(<Banco />);
