@@ -300,6 +300,11 @@ export interface OperationalCase {
         readinessStatus: "READY" | "NOT_READY";
         orientationAssessment: Orientation | null;
         signedAt: string | null;
+        /**
+         * Por qué el análisis orientó así. Sólo llega en `GET /admin/cases`
+         * (ADMIN/CALIDAD); la bandeja del médico no lo trae, de ahí el opcional.
+         */
+        orientationReason?: OrientationReason | null;
       }
     | null;
 }
@@ -316,7 +321,66 @@ export interface ReportListItem {
   readinessStatus: "READY" | "NOT_READY";
   orientationAssessment: Orientation | null;
   signedAt: string | null;
+  /** Motivo corto de la orientación. Sólo ADMIN/CALIDAD. */
+  orientationReason: OrientationReason | null;
 }
+
+/**
+ * EL MOTIVO DE LA ORIENTACIÓN IA, para ADMIN y CALIDAD.
+ *
+ * Es una AYUDA DE REVISIÓN: explica en pocas palabras por qué el análisis
+ * orientó el expediente como lo hizo. La decisión es del profesional. Los
+ * textos (`label`, `rationale`…) los redacta el backend; aquí no se componen.
+ */
+export type OrientationReasonCategory =
+  | "RECOVERABLE_SUPPORTED"
+  | "IRRECOVERABLE_SUPPORTED"
+  | "CONTRADICTORY_EVIDENCE"
+  | "HUMAN_REVIEW_REQUIRED"
+  | "MISSING_CLINICAL_DOMAINS"
+  | "SUSTAINED_CONDITION_WITHOUT_CLINICAL_DETAIL"
+  | "NO_STRUCTURED_CLINICAL_FACTS"
+  | "NO_CLINICAL_EVIDENCE"
+  | "UNKNOWN";
+
+export interface OrientationReason {
+  category: OrientationReasonCategory;
+  /** Motivo corto, del tamaño de una celda. Ya en español. */
+  label: string;
+  requiresClinicalReview: boolean;
+}
+
+/** `GET /reports/:reportId/orientation-review`. ADMIN/CALIDAD; un médico recibe 403. */
+export interface OrientationReview {
+  reportId: string;
+  caseId: string;
+  externalCaseId: string;
+  assessment: Orientation | null;
+  category: OrientationReasonCategory;
+  label: string;
+  rationale: string;
+  whatToReview: string | null;
+  presentEvidence: string[];
+  missingEvidence: string[];
+  supportingSummary: string[];
+  opposingSummary: string[];
+  warnings: string[];
+  requiresClinicalReview: boolean;
+  reviewFlags: ("CONTRADICTORY_EVIDENCE" | "HUMAN_REVIEW_REQUIRED")[];
+}
+
+/** Etiquetas cortas para filtrar por motivo. */
+export const ORIENTATION_REASON_FILTER_LABEL: Record<OrientationReasonCategory, string> = {
+  RECOVERABLE_SUPPORTED: "Recuperable con fundamento",
+  IRRECOVERABLE_SUPPORTED: "No recuperable con fundamento",
+  CONTRADICTORY_EVIDENCE: "Evidencia contradictoria",
+  HUMAN_REVIEW_REQUIRED: "Revisión humana",
+  MISSING_CLINICAL_DOMAINS: "Falta evolución/pronóstico/función",
+  SUSTAINED_CONDITION_WITHOUT_CLINICAL_DETAIL: "Cuadro sostenido sin detalle clínico",
+  NO_STRUCTURED_CLINICAL_FACTS: "Evidencia clínica insuficiente",
+  NO_CLINICAL_EVIDENCE: "Sin evidencia clínica",
+  UNKNOWN: "Motivo no identificado",
+};
 
 export interface ExportJob {
   id: string;

@@ -14,6 +14,7 @@ import type {
   ExportJob,
   HeldCase,
   OperationalCase,
+  OrientationReview,
   ReportListItem,
 } from "./backend";
 
@@ -201,6 +202,7 @@ export function useReports(filtros: AdminReportsFiltros) {
   const q = new URLSearchParams({ limit: String(filtros.limit ?? 100) });
   if (filtros.batchId) q.set("batchId", filtros.batchId);
   if (filtros.workflowStatus) q.set("workflowStatus", filtros.workflowStatus);
+  if (filtros.orientation) q.set("orientation", filtros.orientation);
   return useQuery({
     queryKey: queryKeys.reports(filtros),
     queryFn: () =>
@@ -212,6 +214,22 @@ export function useReports(filtros: AdminReportsFiltros) {
     staleTime: STALE.reports,
     gcTime: GC.corto,
     placeholderData: (previo) => previo,
+  });
+}
+
+/**
+ * El fundamento de la orientación IA de un informe. ADMIN/CALIDAD.
+ *
+ * Se pide sólo cuando alguien despliega la fila (`enabled`): no se piden cien
+ * fundamentos para leer uno.
+ */
+export function useOrientationReview(reportId: string, opciones?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.reportOrientationReview(reportId),
+    queryFn: () => api<OrientationReview>(`/reports/${reportId}/orientation-review`),
+    staleTime: STALE.reports,
+    gcTime: GC.corto,
+    enabled: (opciones?.enabled ?? true) && Boolean(reportId),
   });
 }
 

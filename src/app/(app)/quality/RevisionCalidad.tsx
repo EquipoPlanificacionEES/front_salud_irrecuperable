@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
 import { useInvalidar, useReports } from "@/lib/queries";
-import { ORIENTATION_LABEL, WORKFLOW_LABEL, type ReportWorkflowStatus } from "@/lib/backend";
+import { ORIENTATION_LABEL, WORKFLOW_LABEL, type Orientation, type ReportWorkflowStatus } from "@/lib/backend";
 import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
+import { OrientacionCelda, OrientationReviewCard } from "@/components/OrientationReviewCard";
+
+const ORIENTACIONES: Orientation[] = ["RECOVERABLE", "IRRECOVERABLE", "INDETERMINATE"];
 
 // GET  /api/v1/reports                                       → informes del contrato
 // POST /api/v1/reports/:reportId/return-to-doctor {reason}   → devolver al médico asignado
@@ -32,6 +35,10 @@ export function RevisionCalidad() {
   const [devolviendo, setDevolviendo] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
+  /** Filtro de orientación: de CLIENTE, sobre las 200 filas ya cargadas. */
+  const [fOri, setFOri] = useState("");
+  /** Qué fila tiene desplegado el fundamento de la orientación IA. */
+  const [abierto, setAbierto] = useState<string | null>(null);
 
   // Las tres pestañas salen de ESTA lista: cambiar de pestaña no pide nada.
   const { data, error: fallo, isPending, isFetching } = useReports({ limit: 200 });
@@ -39,13 +46,15 @@ export function RevisionCalidad() {
   const reports = data?.reports ?? [];
   const errorCarga = fallo ? (fallo instanceof ApiFallo ? fallo.message : "No se pudo cargar.") : null;
 
-  const filtrados = reports.filter((r) =>
-    tab === "todos"
-      ? true
-      : tab === "ratificados"
-        ? RATIFICADO.has(r.workflowStatus)
-        : r.workflowStatus === "READY_FOR_REVIEW" || r.workflowStatus === "CHANGES_REQUESTED",
-  );
+  const filtrados = reports
+    .filter((r) =>
+      tab === "todos"
+        ? true
+        : tab === "ratificados"
+          ? RATIFICADO.has(r.workflowStatus)
+          : r.workflowStatus === "READY_FOR_REVIEW" || r.workflowStatus === "CHANGES_REQUESTED",
+    )
+    .filter((r) => !fOri || r.orientationAssessment === fOri);
   const nRatif = reports.filter((r) => RATIFICADO.has(r.workflowStatus)).length;
   const nMedico = reports.filter(
     (r) => r.workflowStatus === "READY_FOR_REVIEW" || r.workflowStatus === "CHANGES_REQUESTED",
@@ -91,6 +100,7 @@ export function RevisionCalidad() {
         </p>
       )}
 
+      <div className="flex flex-wrap items-center gap-2">
       <div className="flex rounded-lg border border-[var(--atm-linea)] bg-white p-0.5">
         {(
           [
@@ -109,6 +119,20 @@ export function RevisionCalidad() {
             {etiqueta}
           </button>
         ))}
+      </div>
+        <select
+          aria-label="Filtrar por orientación IA"
+          value={fOri}
+          onChange={(e) => setFOri(e.target.value)}
+          className="rounded-lg border border-[var(--atm-linea)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--atm-azul2)]"
+        >
+          <option value="">Todas las orientaciones</option>
+          {ORIENTACIONES.map((o) => (
+            <option key={o} value={o}>
+              {ORIENTATION_LABEL[o]}
+            </option>
+          ))}
+        </select>
       </div>
 
       {msg && (
@@ -137,7 +161,8 @@ export function RevisionCalidad() {
               <tr><td colSpan={5} className="px-4 py-10 text-center text-zinc-400">Sin informes en esta vista.</td></tr>
             )}
             {filtrados.map((r) => (
-              <tr key={r.reportId} className="border-t border-[var(--atm-linea)] align-top">
+              <Fragment key={r.reportId}>
+              <tr className="border-t border-[var(--atm-linea)] align-top">
                 <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{r.externalCaseId}</td>
                 <td className="px-4 py-2.5 text-zinc-600">{r.doctor?.fullName ?? "—"}</td>
                 <td className="px-4 py-2.5">
@@ -145,10 +170,20 @@ export function RevisionCalidad() {
                     {WORKFLOW_LABEL[r.workflowStatus]}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-zinc-600">
-                  {r.orientationAssessment ? ORIENTATION_LABEL[r.orientationAssessment] : "—"}
+                <td className="px-4 py-2.5">
+                  <OrientacionCelda assessment={r.orientationAssessment} reason={r.orientationReason} />
                 </td>
                 <td className="px-4 py-2.5 text-right">
+                  {devolviendo !== r.reportId && (
+                    <button
+                      type="button"
+                      aria-expanded={abierto === r.reportId}
+                      onClick={() => setAbierto((v) => (v === r.reportId ? null : r.reportId))}
+                      className="mb-1 mr-2 rounded-lg border border-[var(--atm-linea)] px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+                    >
+                      {abierto === r.reportId ? "Ocultar fundamento" : "Ver fundamento"}
+                    </button>
+                  )}
                   {devolviendo === r.reportId ? (
                     <div className="w-72 space-y-2 text-left">
                       <textarea
@@ -193,6 +228,14 @@ export function RevisionCalidad() {
                   )}
                 </td>
               </tr>
+              {abierto === r.reportId && (
+                <tr className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
+                  <td colSpan={5} className="px-4 py-3">
+                    <OrientationReviewCard reportId={r.reportId} enabled />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

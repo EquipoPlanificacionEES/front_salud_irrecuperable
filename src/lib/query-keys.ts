@@ -21,6 +21,8 @@ export interface AdminCasesFiltros {
 export interface AdminReportsFiltros {
   batchId?: string;
   workflowStatus?: string;
+  /** RECOVERABLE | IRRECOVERABLE | INDETERMINATE. Filtro de servidor. */
+  orientation?: string;
   limit?: number;
 }
 
@@ -57,6 +59,12 @@ export const queryKeys = {
   },
   /** `GET /reports` — el listado, que usan Informes (admin) y Calidad. */
   reports: (filtros: AdminReportsFiltros) => ["reports", filtros] as const,
+  /**
+   * `GET /reports/{reportId}/orientation-review` — el fundamento de la
+   * orientación IA. Bajo el prefijo `"reports"` a propósito: las invalidaciones
+   * de informes y el `qc.clear()` al cambiar de ámbito lo alcanzan.
+   */
+  reportOrientationReview: (reportId: string) => ["reports", "orientation-review", reportId] as const,
   exports: () => ["exports"] as const,
 } as const;
 

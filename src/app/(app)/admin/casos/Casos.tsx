@@ -149,6 +149,14 @@ export function Casos() {
             </td>
             <td className="px-4 py-2.5 text-zinc-600">
               {c.report?.orientationAssessment ? ORIENTATION_LABEL[c.report.orientationAssessment] : "—"}
+              {c.report?.orientationReason?.label && (
+                <span
+                  className="mt-0.5 block max-w-56 truncate text-[11px] text-zinc-500"
+                  title={c.report.orientationReason.label}
+                >
+                  {c.report.orientationReason.label}
+                </span>
+              )}
             </td>
             <td className="px-4 py-2.5">
               {/* Se bloquea SÓLO la fila que se está moviendo: bloquear la tabla
