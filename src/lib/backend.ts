@@ -412,6 +412,23 @@ export const WORKFLOW_LABEL: Record<ReportWorkflowStatus, string> = {
   SIGNING_FAILED: "Devuelto",
 };
 
+/**
+ * ETIQUETAS PARA FILTRAR, una por estado real del circuito.
+ *
+ * `WORKFLOW_LABEL` agrupa seis estados en tres textos para mostrarlos, y eso
+ * está bien en una celda. En un desplegable no: seis opciones con tres textos
+ * repetidos («Ratificado» ×3, «Devuelto» ×2) no dejan saber qué filtra cada
+ * una. Aquí cada estado tiene su nombre, y el texto de la tabla no cambia.
+ */
+export const WORKFLOW_FILTER_LABEL: Record<ReportWorkflowStatus, string> = {
+  READY_FOR_REVIEW: "Por revisar (médico)",
+  CHANGES_REQUESTED: "Devuelto al médico",
+  APPROVED: "Ratificado · pendiente de firma",
+  SIGNING: "Ratificado · firmando",
+  SIGNED: "Ratificado · firmado",
+  SIGNING_FAILED: "Firma fallida",
+};
+
 export const ORIENTATION_LABEL: Record<Orientation, string> = {
   RECOVERABLE: "Recuperable",
   IRRECOVERABLE: "No recuperable",

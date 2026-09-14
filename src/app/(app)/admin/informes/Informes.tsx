@@ -6,6 +6,7 @@ import { useBatches, useReports } from "@/lib/queries";
 import {
   ORIENTATION_LABEL,
   ORIENTATION_REASON_FILTER_LABEL,
+  WORKFLOW_FILTER_LABEL,
   WORKFLOW_LABEL,
   type Orientation,
   type OrientationReasonCategory,
@@ -63,6 +64,20 @@ export function Informes() {
       )
     : reports;
 
+  /**
+   * CONTADORES POR TEXTO VISIBLE. Tres estados se ven como «Ratificado»: una
+   * chapa por estado repetiría el mismo texto tres veces. Se suman bajo su
+   * texto, en el orden del circuito.
+   */
+  const porEstadoVisible: { etiqueta: string; total: number; tono: ReturnType<typeof workflowTono> }[] = [];
+  for (const w of ORDEN) {
+    const n = counts[w] ?? 0;
+    if (n === 0) continue;
+    const previo = porEstadoVisible.find((e) => e.etiqueta === WORKFLOW_LABEL[w]);
+    if (previo) previo.total += n;
+    else porEstadoVisible.push({ etiqueta: WORKFLOW_LABEL[w], total: n, tono: workflowTono(w) });
+  }
+
   const porOrientacion = ORIENTACIONES.map((o) => [o, reports.filter((r) => r.orientationAssessment === o).length] as const)
     .filter(([, n]) => n > 0);
   const porMotivo = new Map<string, number>();
@@ -86,11 +101,11 @@ export function Informes() {
             </option>
           ))}
         </Select>
-        <Select value={fWf} onChange={(e) => setFWf(e.target.value)}>
+        <Select aria-label="Filtrar por estado" value={fWf} onChange={(e) => setFWf(e.target.value)}>
           <option value="">Cualquier estado</option>
           {ORDEN.map((w) => (
             <option key={w} value={w}>
-              {WORKFLOW_LABEL[w]}
+              {WORKFLOW_FILTER_LABEL[w]}
             </option>
           ))}
         </Select>
@@ -122,11 +137,11 @@ export function Informes() {
         </span>
       </div>
 
-      {ORDEN.some((w) => counts[w]) && (
+      {porEstadoVisible.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {ORDEN.filter((w) => counts[w]).map((w) => (
-            <Chip key={w} tono={workflowTono(w)}>
-              {WORKFLOW_LABEL[w]}: {counts[w]}
+          {porEstadoVisible.map(({ etiqueta, total: n, tono }) => (
+            <Chip key={etiqueta} tono={tono}>
+              {etiqueta}: {n}
             </Chip>
           ))}
         </div>
@@ -159,7 +174,7 @@ export function Informes() {
             <tr className="border-t border-[var(--atm-linea)] align-top hover:bg-[var(--atm-fondo)]">
               <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{r.externalCaseId}</td>
               <td className="px-4 py-2.5 text-zinc-600">{r.batch?.name ?? "—"}</td>
-              <td className="px-4 py-2.5 text-zinc-600">{r.doctor?.fullName ?? "—"}</td>
+              <td className="min-w-44 px-4 py-2.5 text-zinc-600">{r.doctor?.fullName ?? "—"}</td>
               <td className="px-4 py-2.5 text-zinc-600">v{r.version}</td>
               <td className="px-4 py-2.5">
                 <Chip tono={workflowTono(r.workflowStatus)}>{WORKFLOW_LABEL[r.workflowStatus]}</Chip>

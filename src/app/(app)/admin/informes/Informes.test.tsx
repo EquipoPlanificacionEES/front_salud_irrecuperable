@@ -105,6 +105,48 @@ describe("Informes · orientación IA", () => {
     );
   });
 
+  it("el filtro de estado tiene una opción por estado real, sin textos repetidos, y viaja al servidor", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      const json = (b: unknown) =>
+        new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
+      if (u.includes("/reports?")) {
+        return json({
+          reports: [INDETERMINADA],
+          total: 1,
+          countsByWorkflowStatus: { READY_FOR_REVIEW: 44, APPROVED: 1, SIGNING: 2, SIGNED: 46 },
+        });
+      }
+      return json({ batches: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
+
+    const select = screen.getByLabelText("Filtrar por estado") as HTMLSelectElement;
+    const textos = [...select.options].map((o) => o.textContent);
+    expect(textos).toEqual([
+      "Cualquier estado",
+      "Por revisar (médico)",
+      "Devuelto al médico",
+      "Ratificado · pendiente de firma",
+      "Ratificado · firmando",
+      "Ratificado · firmado",
+      "Firma fallida",
+    ]);
+    expect(new Set(textos).size).toBe(textos.length);
+
+    // Los contadores se suman bajo su texto visible: una sola chapa «Ratificado».
+    expect(screen.getByText("Ratificado: 49")).toBeDefined();
+    expect(screen.getByText("Por revisar: 44")).toBeDefined();
+    expect(screen.queryAllByText(/^Ratificado: /)).toHaveLength(1);
+
+    fireEvent.change(select, { target: { value: "SIGNED" } });
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("workflowStatus=SIGNED"))).toBe(true),
+    );
+  });
+
   it("el filtro por motivo de indeterminación deja sólo esas filas", async () => {
     vi.stubGlobal("fetch", backend([INDETERMINADA, RECUPERABLE]));
     pintarConQuery(<Informes />);
