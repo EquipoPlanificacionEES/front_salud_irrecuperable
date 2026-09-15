@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ApiFallo } from "@/lib/api";
 import { useDoctorInbox, usePrefetchCaseReport } from "@/lib/queries";
+import { iniciarRevision } from "@/lib/inicio-revision";
 import { BandejaSkeleton, Refrescando } from "@/components/Skeleton";
 import {
   ORIENTATION_LABEL,
@@ -167,6 +168,11 @@ export function Bandeja() {
                         // abrir uno.
                         onMouseEnter={() => prefetchInforme(c.caseId)}
                         onFocus={() => prefetchInforme(c.caseId)}
+                        // «Revisar» declara el inicio de la revisión médica (una
+                        // vez por asignación, en el servidor). No bloquea: la
+                        // navegación sigue aunque la medición falle. «Ver» —el
+                        // histórico— no inicia nada.
+                        onClick={tab === "pendientes" ? () => void iniciarRevision(c.caseId) : undefined}
                         className="rounded-lg border border-[var(--atm-linea)] px-3 py-1 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
                       >
                         {tab === "pendientes" ? "Revisar" : "Ver"}
