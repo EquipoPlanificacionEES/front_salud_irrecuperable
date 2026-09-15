@@ -56,6 +56,10 @@ export const queryKeys = {
     assignmentContext: (batchId: string) => ["admin", "assignment-context", batchId] as const,
     users: () => ["admin", "users"] as const,
     doctors: () => ["admin", "doctors"] as const,
+    /** `GET /admin/dashboard/overview` — agregados; la clave es el querystring de filtros. */
+    dashboard: (query: string) => ["admin", "dashboard", "overview", query] as const,
+    /** `GET /admin/dashboard/cases` — drilldown paginado de un segmento. */
+    dashboardCases: (query: string) => ["admin", "dashboard", "cases", query] as const,
   },
   /** `GET /reports` — el listado, que usan Informes (admin) y Calidad. */
   reports: (filtros: AdminReportsFiltros) => ["reports", filtros] as const,

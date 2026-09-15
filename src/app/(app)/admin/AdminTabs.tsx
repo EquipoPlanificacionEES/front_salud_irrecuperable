@@ -6,6 +6,7 @@ import { EnlaceNav } from "@/components/EnlaceNav";
 // Sub-navegación del área de administración. Cada pestaña consume el backend real
 // (/api/v1/admin/*, /api/v1/reports, /api/v1/exports).
 const TABS = [
+  { href: "/admin/dashboard", etiqueta: "Dashboard" },
   { href: "/admin/semanas", etiqueta: "Semanas" },
   { href: "/admin/asignaciones", etiqueta: "Asignaciones" },
   { href: "/admin/reasignacion", etiqueta: "Reasignar" },
