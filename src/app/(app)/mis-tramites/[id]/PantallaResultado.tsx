@@ -155,6 +155,9 @@ interface Report {
 
 type Evaluacion = "RECOVERABLE" | "IRRECOVERABLE";
 
+/** Alto de la barra fija de acciones (~72px) + margen: nada del editor queda debajo. */
+const ESPACIO_BARRA_ACCIONES = "pb-32";
+
 const ESTADO: Record<ReportWorkflowStatus, { texto: string; chip: string; aviso?: { tono: "info" | "ok" | "obs" | "mal"; texto: string } }> = {
   READY_FOR_REVIEW: {
     texto: "Por revisar",
@@ -603,7 +606,10 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const antecedentesDestacados = cap.canResolveAndApprove;
 
   return (
-    <div className="space-y-4">
+    /* La barra de acciones es FIJA al viewport: sin este margen inferior, el
+       último campo del editor —o la casilla de la Sección V— quedaba debajo
+       de ella y no se podía ver ni pulsar. */
+    <div className={puedeActuar ? `space-y-4 ${ESPACIO_BARRA_ACCIONES}` : "space-y-4"} data-testid="ficha-caso">
       {/* Cabecera */}
       <div className="rounded-xl border border-[var(--atm-linea)] bg-white px-5 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">

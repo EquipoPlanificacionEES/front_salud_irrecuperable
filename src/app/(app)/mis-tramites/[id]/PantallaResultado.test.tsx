@@ -286,6 +286,23 @@ async function abrirEditor(nombre: RegExp) {
   await waitFor(() => expect(screen.getByLabelText(/Conclusión general/)).toBeDefined());
 }
 
+describe("PantallaResultado · barra fija de acciones", () => {
+  it("G · con la barra visible, la ficha reserva espacio inferior para que no tape el último control", async () => {
+    await pintar(PUEDE_ACTUAR);
+    await abrirEditor(RECTIFICAR);
+    const ficha = screen.getByTestId("ficha-caso");
+    expect(ficha.className).toMatch(/\bpb-32\b/);
+    // Y la barra sigue fija al viewport.
+    const barra = screen.getByRole("button", { name: "Guardar corrección" }).closest(".fixed");
+    expect(barra).not.toBeNull();
+  });
+
+  it("G · sin acciones no se reserva el espacio", async () => {
+    await pintar({ canRequestChanges: false, canApprove: false });
+    expect(screen.getByTestId("ficha-caso").className).not.toMatch(/\bpb-32\b/);
+  });
+});
+
 describe("PantallaResultado · acción de rectificar", () => {
   it("A · canRequestChanges sin canApprove: rectificar visible, ratificar no disponible", async () => {
     await pintar({ canRequestChanges: true, canApprove: false });

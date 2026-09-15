@@ -363,7 +363,17 @@ function Campo({
    * que eran ellas las que lo impedían. Lo que el sistema no pudo establecer se
    * dice abajo, como dato, sin sonar a tarea pendiente.
    */
-  const porCompletar = campo.required && valor.trim() === "";
+  const eleccion = campo.kind === "CHOICE";
+  const etiquetaDe = (v: string) => campo.options?.find((o) => o.value === v)?.label ?? v;
+  /**
+   * LA EVALUACIÓN ES EL PRONUNCIAMIENTO DEL MÉDICO, no la orientación del
+   * sistema, y por eso no viene marcada. Pero el informe SÍ dice algo hoy: eso
+   * se muestra como «valor actual» y lo que se pide es confirmarlo o cambiarlo,
+   * no «completar» algo que parece faltar.
+   */
+  const valorVigente = eleccion ? (campo.doctorValue ?? (campo.systemValue || null)) : null;
+  const porConfirmar = eleccion && valor.trim() === "" && valorVigente !== null;
+  const porCompletar = campo.required && valor.trim() === "" && !porConfirmar;
 
   return (
     <div className={largo ? "sm:col-span-2" : ""}>
@@ -374,6 +384,9 @@ function Campo({
         </label>
         {porCompletar && (
           <span className="text-xs font-medium text-[var(--atm-obs)]">· por completar</span>
+        )}
+        {porConfirmar && (
+          <span className="text-xs font-medium text-[var(--atm-azul)]">· confirma o cambia</span>
         )}
         {modificado && (
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-[var(--atm-obs)]">
@@ -428,6 +441,20 @@ function Campo({
         LO QUE DIJO EL SISTEMA, siempre visible. No desaparece al editar: el
         médico tiene que poder ver de qué está discrepando MIENTRAS discrepa.
       */}
+      {eleccion && valorVigente !== null ? (
+        <p className="mt-1 text-xs text-zinc-500">
+          <span className="text-zinc-400">Valor actual en el informe: </span>
+          <span className="font-medium text-zinc-700">{etiquetaDe(valorVigente)}</span>
+          <span className="text-zinc-400">
+            {campo.doctorValue !== null ? " (tu corrección anterior)" : " (propuesta del sistema)"}
+          </span>
+          {valor.trim() === "" && (
+            <span className="block text-zinc-500">
+              Sin pronunciamiento tuyo en esta corrección: elige la evaluación para poder guardarla.
+            </span>
+          )}
+        </p>
+      ) : (
       <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
         <span className="text-zinc-400">{ORIGEN[campo.sourceType]}:</span>
         <span className={determinado ? "font-medium text-zinc-600" : "italic text-zinc-500"}>
@@ -443,6 +470,7 @@ function Campo({
           </button>
         )}
       </p>
+      )}
     </div>
   );
 }

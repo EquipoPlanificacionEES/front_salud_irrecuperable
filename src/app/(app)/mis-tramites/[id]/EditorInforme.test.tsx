@@ -474,6 +474,120 @@ describe("DATA_UNAVAILABLE != 0", () => {
   });
 });
 
+describe("hidratación del informe efectivo", () => {
+  const V = (extra: Partial<CampoFormulario> = {}) =>
+    campo("assessment", "Evaluación", "CHOICE", "RECOVERABLE", {
+      required: true,
+      options: [
+        { value: "RECOVERABLE", label: "SALUD RECUPERABLE" },
+        { value: "IRRECOVERABLE", label: "SALUD IRRECUPERABLE" },
+      ],
+      value: "",
+      effectiveValue: "",
+      ...extra,
+    });
+  const EFECTIVO: FormularioInforme = {
+    reportSnapshotId: "00000000-0000-4000-8000-000000000003",
+    version: 1,
+    sections: [
+      {
+        id: "II",
+        title: "II. ANTECEDENTES",
+        fields: [
+          campo("authorizedLicenseCount", "Total licencias autorizadas", "INTEGER", "16"),
+          campo("rejectedLicenseCount", "Licencias rechazadas", "INTEGER", "11", {
+            doctorValue: "12", effectiveValue: "12", value: "12",
+          }),
+        ],
+      },
+      {
+        id: "III",
+        title: "III. ANÁLISIS",
+        fields: [campo("clinicalAnalysis", "Análisis de antecedentes clínicos", "LONG_TEXT", "Diagnóstico principal proyectado.\n\nTratamiento en curso.", { sourceType: "ENGINE_NARRATIVE" })],
+      },
+      {
+        id: "IV",
+        title: "IV. CONCLUSIÓN",
+        fields: [campo("conclusion", "Conclusión general", "LONG_TEXT", "Conclusión vigente.", { required: true, sourceType: "ENGINE_NARRATIVE" })],
+      },
+      { id: "V", title: "V. EVALUACIÓN", fields: [V()] },
+    ],
+  };
+  function BancoEfectivo({ form = EFECTIVO }: { form?: FormularioInforme }) {
+    const [b, setB] = useState<Borrador>(borradorInicial(form));
+    return <EditorInforme form={form} borrador={b} onChange={setB} />;
+  }
+  const valorDe = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value;
+
+  it("A · sistema 16 sin corrección → input 16 y leyenda 16", () => {
+    render(<BancoEfectivo />);
+    expect(valorDe("Total licencias autorizadas")).toBe("16");
+    expect(screen.getByText("16")).toBeDefined();
+  });
+
+  it("B · sistema 11, corrección 12 → input 12 y leyenda 11", () => {
+    render(<BancoEfectivo />);
+    expect(valorDe("Licencias rechazadas")).toBe("12");
+    expect(screen.getByText("11")).toBeDefined();
+  });
+
+  it("C · análisis clínico del sistema → textarea con ese texto, no vacío", () => {
+    render(<BancoEfectivo />);
+    expect(valorDe("Análisis de antecedentes clínicos")).toBe("Diagnóstico principal proyectado.\n\nTratamiento en curso.");
+    expect(screen.queryByText("No determinado por el sistema")).toBeNull();
+  });
+
+  it("D · análisis corregido → textarea con la corrección y leyenda con el del sistema", () => {
+    const form: FormularioInforme = {
+      ...EFECTIVO,
+      sections: EFECTIVO.sections.map((s) =>
+        s.id === "III"
+          ? { ...s, fields: [campo("clinicalAnalysis", "Análisis de antecedentes clínicos", "LONG_TEXT", "Texto X del sistema.", {
+              sourceType: "ENGINE_NARRATIVE", doctorValue: "Texto Y del médico.", effectiveValue: "Texto Y del médico.", value: "Texto Y del médico.",
+            })] }
+          : s,
+      ),
+    };
+    render(<BancoEfectivo form={form} />);
+    expect(valorDe("Análisis de antecedentes clínicos")).toBe("Texto Y del médico.");
+    expect(screen.getByText("Texto X del sistema.")).toBeDefined();
+  });
+
+  it("E · con un valor vigente RECUPERABLE, la evaluación NO dice «por completar»: dice el valor actual", () => {
+    render(<BancoEfectivo />);
+    expect(screen.queryByText(/por completar/)).toBeNull();
+    expect(screen.getByText(/confirma o cambia/)).toBeDefined();
+    expect(screen.getByText("Valor actual en el informe:")).toBeDefined();
+    expect(screen.getByText("SALUD RECUPERABLE", { selector: "span.font-medium" })).toBeDefined();
+    expect(screen.getByText(/propuesta del sistema/)).toBeDefined();
+    // Elegida, desaparece el aviso de pendiente.
+    fireEvent.click(screen.getByLabelText("SALUD RECUPERABLE"));
+    expect(screen.queryByText(/confirma o cambia/)).toBeNull();
+  });
+
+  it("E · una corrección anterior se presenta como tal, no como propuesta del sistema", () => {
+    const form: FormularioInforme = {
+      ...EFECTIVO,
+      sections: EFECTIVO.sections.map((s) =>
+        s.id === "V" ? { ...s, fields: [V({ systemValue: "", doctorValue: "IRRECOVERABLE", value: "IRRECOVERABLE", effectiveValue: "IRRECOVERABLE" })] } : s,
+      ),
+    };
+    render(<BancoEfectivo form={form} />);
+    expect(screen.getByText(/tu corrección anterior/)).toBeDefined();
+    expect((screen.getByLabelText("SALUD IRRECUPERABLE") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("F · guardar cambiando SÓLO la conclusión no manda cifras, análisis ni identidad", () => {
+    const b = borradorInicial(EFECTIVO);
+    const cuerpo = cuerpoDeCorreccion(EFECTIVO, {
+      ...b,
+      valores: { ...b.valores, conclusion: "Conclusión nueva.", assessment: "RECOVERABLE" },
+    });
+    // La evaluación viaja siempre: es lo que se firma y el contrato la exige.
+    expect(cuerpo).toEqual({ schemaVersion: 2, assessment: "RECOVERABLE", conclusion: "Conclusión nueva." });
+  });
+});
+
 describe("secciones", () => {
   it("la identificación viene plegada: no es lo que se corrige a diario", () => {
     render(<Banco />);
