@@ -194,6 +194,88 @@ describe("cuerpo que se envía", () => {
   });
 });
 
+describe("edición segura · formulario lleno, cambiar un campo", () => {
+  /** Un formulario de una versión ya corregida: cifra del médico y nota impresa. */
+  const CORREGIDO: FormularioInforme = {
+    ...FORM,
+    note: "Nota impresa.",
+    sections: FORM.sections.map((s) =>
+      s.id === "II"
+        ? {
+            ...s,
+            fields: [
+              campo("authorizedDaysKnown", "Total días autorizados", "INTEGER", "300", {
+                doctorValue: "285", effectiveValue: "285", value: "285",
+              }),
+              campo("tpiStage", "Etapa TPI", "TEXT", "Sin trámite", { sourceType: "SOURCE_EXTRACTION" }),
+            ],
+          }
+        : s,
+    ),
+  };
+  const conDecision = (form: FormularioInforme, extra: Record<string, string> = {}): Borrador => {
+    const b = borradorInicial(form);
+    return { ...b, valores: { ...b.valores, assessment: "RECOVERABLE", ...extra } };
+  };
+
+  it("precarga TODO lo vigente, también la nota impresa", () => {
+    const b = borradorInicial(CORREGIDO);
+    expect(b.valores).toMatchObject({
+      fullName: "PERSONA SINTÉTICA", authorizedDaysKnown: "285", tpiStage: "Sin trámite",
+      clinicalAnalysis: "Texto del sistema.", conclusion: "Conclusión del sistema.",
+    });
+    expect(b.nota).toBe("Nota impresa.");
+  });
+
+  it("cambiar SÓLO la etapa TPI envía sólo ese campo, más conclusión y casilla; nada de nota", () => {
+    const cuerpo = cuerpoDeCorreccion(CORREGIDO, conDecision(CORREGIDO, { tpiStage: "En tramitación" }));
+    expect(cuerpo).toEqual({
+      schemaVersion: 2,
+      assessment: "RECOVERABLE",
+      conclusion: "Conclusión del sistema.",
+      figureTexts: { tpiStage: "En tramitación" },
+    });
+  });
+
+  it("abrir y guardar sin tocar nada no envía ningún campo del informe", () => {
+    expect(cuerpoDeCorreccion(CORREGIDO, conDecision(CORREGIDO))).toEqual({
+      schemaVersion: 2, assessment: "RECOVERABLE", conclusion: "Conclusión del sistema.",
+    });
+  });
+
+  it("vaciar la nota la envía vacía (retirarla); cambiarla la envía", () => {
+    const vacia = { ...conDecision(CORREGIDO), nota: "  " };
+    expect(cuerpoDeCorreccion(CORREGIDO, vacia)).toMatchObject({ note: "" });
+    const otra = { ...conDecision(CORREGIDO), nota: "Otra nota." };
+    expect(cuerpoDeCorreccion(CORREGIDO, otra)).toMatchObject({ note: "Otra nota." });
+  });
+
+  it("tras guardar, el formulario refrescado arranca de lo guardado y no hay cambios pendientes", () => {
+    // Lo que devuelve el servidor después de aplicar la corrección de tpiStage.
+    const refrescado: FormularioInforme = {
+      ...CORREGIDO,
+      version: 3,
+      sections: CORREGIDO.sections.map((s) =>
+        s.id === "II"
+          ? {
+              ...s,
+              fields: s.fields.map((f) =>
+                f.key === "tpiStage"
+                  ? { ...f, doctorValue: "En tramitación", effectiveValue: "En tramitación", value: "En tramitación" }
+                  : f,
+              ),
+            }
+          : s,
+      ),
+    };
+    const b = borradorInicial(refrescado);
+    expect(b.valores["tpiStage"]).toBe("En tramitación");
+    expect(b.valores["authorizedDaysKnown"]).toBe("285");
+    expect(b.nota).toBe("Nota impresa.");
+    expect(camposModificados(refrescado, b)).toEqual([]);
+  });
+});
+
 describe("motivo de corrección", () => {
   it("sólo lo exige lo que está marcado como sensible", () => {
     const b = borradorInicial(FORM);

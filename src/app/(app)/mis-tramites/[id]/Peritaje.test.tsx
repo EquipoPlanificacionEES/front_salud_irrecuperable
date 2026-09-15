@@ -97,6 +97,37 @@ describe("formulario del peritaje", () => {
     expect(init.method).toBe("POST");
   });
 
+  it("COMPLETAR con cambios sin guardar: primero GUARDA lo tocado y después completa", async () => {
+    fetchMock
+      .mockImplementationOnce(() => respuesta(peritaje({ version: 4, values: { diagnosesReportedAtInterview: "Nuevo." } })))
+      .mockImplementationOnce(() => respuesta(peritaje({ status: "COMPLETED", version: 5 })));
+    pintarConQuery(<FormularioPeritaje caseId="c1" peritaje={peritaje()} />);
+
+    fireEvent.change(screen.getByLabelText(/Diagnósticos informados/), { target: { value: "Nuevo." } });
+    fireEvent.click(screen.getByRole("button", { name: "Completar peritaje" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [urlGuardar, initGuardar] = fetchMock.mock.calls[0];
+    expect(urlGuardar).toBe("/api/v1/cases/c1/telematic-assessment/draft");
+    const cuerpo = JSON.parse(initGuardar.body);
+    expect(cuerpo).toEqual({ expectedVersion: 3, values: { diagnosesReportedAtInterview: "Nuevo." } });
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/cases/c1/telematic-assessment/complete");
+  });
+
+  it("COMPLETAR con cambios sin guardar y un 409 al guardar: NO completa y no borra lo escrito", async () => {
+    fetchMock.mockImplementation(() => respuesta({ error: { message: "Conflicto." } }, 409));
+    pintarConQuery(<FormularioPeritaje caseId="c1" peritaje={peritaje()} />);
+
+    const campo = screen.getByLabelText(/Diagnósticos informados/) as HTMLTextAreaElement;
+    fireEvent.change(campo, { target: { value: "No se pierde." } });
+    fireEvent.click(screen.getByRole("button", { name: "Completar peritaje" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).not.toMatch(/complete/);
+    expect(campo.value).toBe("No se pierde.");
+  });
+
   it("un 409 AVISA y NO borra lo escrito", async () => {
     fetchMock.mockImplementation(() =>
       respuesta({ error: { message: "El borrador cambió desde que lo abriste." } }, 409),

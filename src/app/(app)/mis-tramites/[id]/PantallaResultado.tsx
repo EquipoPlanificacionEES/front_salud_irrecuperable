@@ -11,6 +11,7 @@ import {
   camposModificados,
   cuerpoDeCorreccion,
   exigeMotivo,
+  notaModificada,
   type Borrador,
   type FormularioInforme,
 } from "./EditorInforme";
@@ -495,7 +496,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const faltaMotivo = exigeMotivo(form, borrador) && borrador.motivo.trim().length < 10;
   const cuerpoListo = cuerpoDeCorreccion(form, borrador) !== null;
   const hayTrabajoSinGuardar =
-    modo !== "ver" && (cambios.length > 0 || borrador.motivo.trim() !== "" || borrador.nota.trim() !== "");
+    modo !== "ver" && (cambios.length > 0 || borrador.motivo.trim() !== "" || notaModificada(form, borrador));
 
   /**
    * Y si el navegador se cierra o se recarga, que el propio navegador avise.

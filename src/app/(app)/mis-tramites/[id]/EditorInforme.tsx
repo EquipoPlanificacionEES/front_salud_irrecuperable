@@ -90,6 +90,11 @@ export interface FormularioInforme {
   readonly reportSnapshotId: string;
   readonly version: number;
   readonly sections: readonly SeccionFormulario[];
+  /**
+   * La nota que HOY se imprime al final de la Sección IV. Opcional porque un
+   * backend anterior no la manda; entonces se trata como sin nota.
+   */
+  readonly note?: string | null;
 }
 
 /** Lo que el médico lleva escrito. Sólo memoria: no se ha guardado nada. */
@@ -106,7 +111,17 @@ export function borradorInicial(form: FormularioInforme | null): Borrador {
     // «reenviar lo mismo» son lo mismo, y el diff de abajo no manda ruido.
     for (const f of s.fields) valores[f.key] = valorDePartida(f);
   }
-  return { valores, motivo: "", nota: "" };
+  return { valores, motivo: "", nota: notaVigente(form) };
+}
+
+/** La nota impresa hoy. Es el punto de partida del campo, igual que los demás. */
+export function notaVigente(form: FormularioInforme | null): string {
+  return (form?.note ?? "").trim();
+}
+
+/** ¿El médico cambió la nota respecto de la que ya se imprime? */
+export function notaModificada(form: FormularioInforme | null, borrador: Borrador): boolean {
+  return borrador.nota.trim() !== notaVigente(form);
 }
 
 /** Un campo cambiado respecto de lo que el informe dice hoy. */
@@ -195,7 +210,9 @@ export function cuerpoDeCorreccion(
     ...(Object.keys(figureTexts).length ? { figureTexts } : {}),
     ...(Object.keys(identity).length ? { identity } : {}),
     ...(borrador.motivo.trim() ? { correctionReason: borrador.motivo.trim() } : {}),
-    ...(borrador.nota.trim() ? { note: borrador.nota.trim() } : {}),
+    // La nota, como cualquier campo, sólo viaja si cambió. Ausente conserva la
+    // impresa; vacía la retira — por eso aquí sí puede viajar "".
+    ...(notaModificada(form, borrador) ? { note: borrador.nota.trim() } : {}),
   };
 }
 
@@ -307,13 +324,16 @@ export function EditorInforme({
       )}
 
       <label className="block text-sm">
-        <span className="text-zinc-600">Nota para el expediente (opcional)</span>
+        <span className="text-zinc-600">Nota del profesional (opcional)</span>
+        <span className="mt-0.5 block text-xs text-zinc-500">
+          Se imprime al final de la conclusión general (Sección IV). Déjala vacía para retirarla.
+        </span>
         <textarea
           className={`${entrada} mt-1`}
           rows={2}
           value={borrador.nota}
           onChange={(e) => onChange({ ...borrador, nota: e.target.value })}
-          placeholder="No se imprime en el informe"
+          placeholder="Sin nota"
         />
       </label>
     </div>

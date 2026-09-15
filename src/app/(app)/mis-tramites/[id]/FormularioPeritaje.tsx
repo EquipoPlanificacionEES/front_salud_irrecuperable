@@ -90,8 +90,28 @@ export function FormularioPeritaje({ caseId, peritaje }: { caseId: string; perit
     );
   }, [guardar, parche, peritaje.version]);
 
-  const onCompletar = useCallback(() => {
+  /**
+   * COMPLETAR CIERRA LO GUARDADO, así que primero se guarda lo que está en
+   * pantalla. Antes se completaba sin mirar el borrador local: lo escrito
+   * después del último «Guardar» quedaba fuera del peritaje cerrado sin aviso.
+   * Si el guardado choca (409) no se completa nada.
+   */
+  const onCompletar = useCallback(async () => {
     setErrores([]);
+    setConflicto(null);
+    if (tocados.size > 0) {
+      try {
+        await guardar.mutateAsync({ expectedVersion: peritaje.version, values: parche });
+        setTocados(new Set());
+      } catch (e) {
+        if (e instanceof ApiFallo && e.status === 409) {
+          setConflicto(
+            "El borrador cambió desde otra sesión. Tu texto sigue aquí; recarga para ver lo guardado antes de completar.",
+          );
+        }
+        return;
+      }
+    }
     completar.mutate(undefined, {
       onError: (e) => {
         if (e instanceof ApiFallo && e.status === 422) {
@@ -102,7 +122,7 @@ export function FormularioPeritaje({ caseId, peritaje }: { caseId: string; perit
         }
       },
     });
-  }, [completar]);
+  }, [completar, guardar, parche, peritaje.version, tocados.size]);
 
   const pendientes = errores.length > 0 ? errores : faltantes;
 
