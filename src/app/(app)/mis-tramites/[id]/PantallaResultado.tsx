@@ -20,10 +20,12 @@ import { PanelCita } from "./PanelCita";
 import { api, ApiFallo } from "@/lib/api";
 import {
   type DocumentoInforme,
+  type IdentityWarning,
   type ManualForm,
   type OperationalCase,
   type ReportWorkflowStatus,
 } from "@/lib/backend";
+import { AdvertenciaIdentidad } from "@/components/AdvertenciaIdentidad";
 import {
   censarLicencias,
   diasLicencia,
@@ -105,6 +107,12 @@ interface Report {
    * médico.
    */
   hold: { active: true; statement: string } | null;
+  /**
+   * DIFERENCIAS DE IDENTIDAD contra la planilla oficial de la semana. Se
+   * muestran antes de firmar; con el RUT coincidente no bloquean. Opcional: una
+   * API anterior no lo manda.
+   */
+  identityWarnings?: IdentityWarning[];
   /**
    * EL EXPEDIENTE ORIGINAL. La URL la compone el backend: la pantalla no decide
    * cuál de los documentos del caso es el expediente ni cómo se llega a él.
@@ -661,6 +669,13 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           {rep.hold.statement}
         </p>
       )}
+
+      {/* IDENTIDAD FRENTE A LA PLANILLA. Arriba, antes del informe y de los
+          botones: un nombre que no coincide se revisa antes de ratificar. */}
+      <AdvertenciaIdentidad
+        warnings={rep.identityWarnings}
+        firmado={rep.workflowStatus === "SIGNED" || rep.workflowStatus === "SIGNING"}
+      />
 
       {/* Avisos de estado / bloqueos / advertencias */}
       {estado.aviso && !editando && (

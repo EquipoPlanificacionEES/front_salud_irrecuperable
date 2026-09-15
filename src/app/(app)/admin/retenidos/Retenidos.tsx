@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
 import { useHolds, useInvalidar } from "@/lib/queries";
 import { CASE_STATUS_LABEL, type HeldCase } from "@/lib/backend";
+import { CATEGORIA_RETENCION_LABEL, presentarMotivoRetencion } from "@/lib/retenciones";
 import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Campo, Chip, FilaVacia, Tabla, Textarea } from "../ui";
 
@@ -26,10 +27,6 @@ import { Aviso, Btn, Campo, Chip, FilaVacia, Tabla, Textarea } from "../ui";
  * resuelve el duplicado. Quien decide necesita ver los dos.
  */
 
-const MOTIVO_LEGIBLE: Record<string, string> = {
-  DUPLICATE_SOURCE_DOCUMENT: "Documento fuente duplicado",
-  SOURCE_IDENTITY_CONFLICT: "Conflicto de identidad en el expediente",
-};
 
 /** Qué pasará al levantarla. Se dice ANTES de pulsar, no después. */
 function consecuencia(caso: HeldCase): string {
@@ -177,7 +174,7 @@ export function Retenidos() {
           >
             <option value="">Todos los motivos</option>
             {tipos.map((t) => (
-              <option key={t} value={t}>{MOTIVO_LEGIBLE[t] ?? t}</option>
+              <option key={t} value={t}>{presentarMotivoRetencion(t).etiqueta}</option>
             ))}
           </select>
           <span className="text-xs text-zinc-500" data-testid="retenidos-total">
@@ -203,7 +200,17 @@ export function Retenidos() {
               <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>
               <td className="px-4 py-2.5 text-xs text-zinc-600">{c.batch?.name ?? "—"}</td>
               <td className="px-4 py-2.5">
-                <Chip tono="obs">{MOTIVO_LEGIBLE[c.hold.reason ?? ""] ?? "Retenido"}</Chip>
+                {(() => {
+                  const motivo = presentarMotivoRetencion(c.hold.reason);
+                  return (
+                    <div title={motivo.descripcion}>
+                      <Chip tono="obs">{motivo.etiqueta}</Chip>
+                      <div className="mt-0.5 text-[11px] text-zinc-500">
+                        {CATEGORIA_RETENCION_LABEL[motivo.categoria]}
+                      </div>
+                    </div>
+                  );
+                })()}
               </td>
               {/* EL PROCESAMIENTO, EN SU PROPIA COLUMNA. No es lo mismo que la
                   retención, y mezclarlos hace creer que levantarla arregla el

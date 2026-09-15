@@ -1230,3 +1230,44 @@ describe("PantallaResultado · salir con trabajo sin guardar", () => {
     expect(aviso.textContent).toMatch(/Llevas\s*1\s*campo modificado sin guardar/);
   });
 });
+
+describe("PantallaResultado · advertencia de identidad antes de firmar", () => {
+  /**
+   * PRADA / PRIDA con el RUT coincidente (33974271): el médico lo ve arriba,
+   * antes de ratificar, con los dos nombres. No bloquea: «Ratificar» sigue ahí.
+   */
+  it("una diferencia de grafía se muestra antes de ratificar y no quita la acción", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchDevolviendo({
+        ...informe({ canRequestChanges: true, canApprove: true, hasActiveSignature: true }),
+        identityWarnings: [
+          {
+            kind: "NAME_SPELLING_DIFFERS",
+            severity: "REVIEW_WARNING",
+            expectedName: "CONSTANZA BELEN PRADA VILLALOBOS",
+            observedName: "PRIDA VILLALOBOS CONSTANZA BELÉN",
+            rutMatch: true,
+            source: "WEEK_SOURCE_WORKBOOK",
+          },
+        ],
+      }),
+    );
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    expect(screen.getByText("Revisar nombre antes de firmar")).toBeDefined();
+    expect(screen.getByText(/El RUT coincide con la fuente oficial/)).toBeDefined();
+    expect(screen.getByText("CONSTANZA BELEN PRADA VILLALOBOS")).toBeDefined();
+    expect(screen.getByText("PRIDA VILLALOBOS CONSTANZA BELÉN")).toBeDefined();
+    expect(screen.getByRole("button", { name: RATIFICAR })).toBeDefined();
+    // El fundamento administrativo de la orientación sigue sin llegar aquí.
+    expect(screen.queryByText("Fundamento IA")).toBeNull();
+  });
+
+  it("sin advertencias, la ficha no muestra ningún aviso de identidad", async () => {
+    await pintar({ canRequestChanges: true, canApprove: false });
+    expect(screen.queryByText(/antes de firmar/)).toBeNull();
+    expect(screen.queryByText(/fuente oficial/)).toBeNull();
+  });
+});

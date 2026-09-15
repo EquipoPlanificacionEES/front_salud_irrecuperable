@@ -1,6 +1,8 @@
 // Tipos del backend real (espejo de los esquemas Zod de /api/v1). Solo lo que el
 // front consume. Fuente de verdad: http://localhost:3000/openapi.json
 
+import type { CodigoRetencion } from "./retenciones";
+
 export type BatchStatus = "OPEN" | "CLOSED";
 export type ReportWorkflowStatus =
   | "READY_FOR_REVIEW"
@@ -113,8 +115,8 @@ export interface HeldCase {
 export interface CaseHold {
   active: true;
   statement: string;
-  /** Sólo llega a ADMIN y CALIDAD, que son quienes la resuelven. */
-  reason?: "DUPLICATE_SOURCE_DOCUMENT" | "SOURCE_IDENTITY_CONFLICT";
+  /** Sólo llega a ADMIN y CALIDAD, que son quienes la resuelven. Texto: `presentarMotivoRetencion`. */
+  reason?: CodigoRetencion;
   /** Como `reason`: sólo para quien puede levantarla. */
   holdId?: string;
 }
@@ -367,6 +369,23 @@ export interface OrientationReview {
   warnings: string[];
   requiresClinicalReview: boolean;
   reviewFlags: ("CONTRADICTORY_EVIDENCE" | "HUMAN_REVIEW_REQUIRED")[];
+  /** Diferencias de identidad contra la planilla. Opcional: una API anterior no lo manda. */
+  identityWarnings?: IdentityWarning[];
+}
+
+/**
+ * DIFERENCIA DE IDENTIDAD contra la planilla oficial de la semana. La calcula
+ * el backend con la misma comparación que decide la asignación. No lleva RUT:
+ * sólo los dos nombres y si el RUT coincide.
+ */
+export interface IdentityWarning {
+  kind: "NAME_MORE_COMPLETE" | "NAME_SPELLING_DIFFERS" | "DATA_MISSING" | "IDENTITY_MISMATCH" | "CASE_REFERENCE_MISMATCH";
+  /** INFORMATIONAL: sin acción · REVIEW_WARNING: revisar antes de firmar · BLOCKING: no debería llegar a firma. */
+  severity: "INFORMATIONAL" | "REVIEW_WARNING" | "BLOCKING";
+  expectedName: string | null;
+  observedName: string | null;
+  rutMatch: boolean | null;
+  source: "WEEK_SOURCE_WORKBOOK";
 }
 
 /** Etiquetas cortas para filtrar por motivo. */

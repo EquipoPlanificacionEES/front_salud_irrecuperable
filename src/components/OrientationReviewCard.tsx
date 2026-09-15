@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { ApiFallo } from "@/lib/api";
 import { useOrientationReview } from "@/lib/queries";
 import { ORIENTATION_LABEL, type Orientation, type OrientationReason } from "@/lib/backend";
+import { AdvertenciaIdentidad } from "./AdvertenciaIdentidad";
 
 /**
  * EL FUNDAMENTO DE LA ORIENTACIÓN IA, para ADMIN y CALIDAD.
@@ -146,6 +147,15 @@ export function OrientationReviewCard({ reportId, enabled = true }: { reportId: 
         <div>
           <p className="text-xs font-semibold text-zinc-600">{conclusiva ? "Fundamento IA" : "Motivo"}</p>
           <p className="mt-0.5 text-zinc-700">{data.rationale}</p>
+        </div>
+      )}
+
+      {(data.identityWarnings?.length ?? 0) > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-zinc-600">Identidad frente a la planilla oficial</p>
+          <div className="mt-1">
+            <AdvertenciaIdentidad warnings={data.identityWarnings} />
+          </div>
         </div>
       )}
 

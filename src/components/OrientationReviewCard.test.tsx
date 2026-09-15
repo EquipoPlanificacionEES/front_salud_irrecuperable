@@ -57,6 +57,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("OrientationReviewCard · identidad frente a la planilla (ADMIN / QUALITY)", () => {
+  it("muestra la diferencia de nombre junto al fundamento, sin tocar la orientación", async () => {
+    await pintar({
+      ...BASE,
+      identityWarnings: [
+        {
+          kind: "NAME_SPELLING_DIFFERS",
+          severity: "REVIEW_WARNING",
+          expectedName: "CONSTANZA BELEN PRADA VILLALOBOS",
+          observedName: "PRIDA VILLALOBOS CONSTANZA BELÉN",
+          rutMatch: true,
+          source: "WEEK_SOURCE_WORKBOOK",
+        },
+      ],
+    });
+    expect(screen.getByText("Identidad frente a la planilla oficial")).toBeDefined();
+    expect(screen.getByText("Revisar nombre antes de firmar")).toBeDefined();
+    expect(screen.getByText("Fundamento IA")).toBeDefined();
+  });
+
+  it("sin advertencias no aparece la sección", async () => {
+    await pintar({ ...BASE, identityWarnings: [] });
+    expect(screen.queryByText("Identidad frente a la planilla oficial")).toBeNull();
+  });
+});
+
 describe("OrientationReviewCard", () => {
   it("RECOVERABLE: título, insignia, «Fundamento IA» y el fundamento; pide el endpoint correcto", async () => {
     const fetchMock = await pintar(BASE);
