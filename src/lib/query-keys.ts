@@ -56,6 +56,8 @@ export const queryKeys = {
     assignmentContext: (batchId: string) => ["admin", "assignment-context", batchId] as const,
     users: () => ["admin", "users"] as const,
     doctors: () => ["admin", "doctors"] as const,
+    /** Prefijo de todo el dashboard: «Actualizar» invalida resumen y drilldown a la vez. */
+    dashboardTodo: () => ["admin", "dashboard"] as const,
     /** `GET /admin/dashboard/overview` — agregados; la clave es el querystring de filtros. */
     dashboard: (query: string) => ["admin", "dashboard", "overview", query] as const,
     /** `GET /admin/dashboard/cases` — drilldown paginado de un segmento. */

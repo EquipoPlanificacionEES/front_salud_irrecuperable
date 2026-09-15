@@ -1,26 +1,125 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDashboardCases } from "@/lib/dashboard-queries";
 import {
+  DETALLE_ATENCION,
   ETIQUETA_ATENCION,
+  ETIQUETA_CAUSA,
   ETIQUETA_ESTADO,
   ETIQUETA_ORIENTACION,
   ETIQUETA_PERFIL,
+  ETIQUETA_PRONUNCIAMIENTO,
+  formatoDuracion,
+  nombreSemana,
+  type CasoDashboard,
   type FiltrosDashboard,
 } from "@/lib/dashboard";
+import { Boton, Esqueleto, Icono, Insignia, Vacio, type Tono } from "./componentes";
 
 /**
  * LOS CASOS DETRÁS DE UN NÚMERO — panel lateral paginado.
  *
  * Lo pide al backend por segmento (`GET /admin/dashboard/cases`), con los MISMOS
  * filtros del panel: lo que se ve aquí es exactamente lo que se contó.
+ *
+ * «Ver expediente» es un enlace a Informes filtrado por el trámite: no llama a
+ * ningún comando. Desde administración NO se registra inicio de revisión médica;
+ * eso sólo ocurre con el «Revisar» del médico en su bandeja.
  */
 
 const POR_PAGINA = 25;
 
-const fecha = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+export const TONO_ORIENTACION: Record<string, Tono> = { RECOVERABLE: "verde", IRRECOVERABLE: "gris", INDETERMINATE: "violeta" };
+
+export function InsigniaOrientacion({ valor }: { valor: string | null }) {
+  if (!valor) return <span className="text-slate-400">—</span>;
+  return (
+    <Insignia tono={TONO_ORIENTACION[valor] ?? "gris"} punto>
+      {ETIQUETA_ORIENTACION[valor] ?? valor}
+    </Insignia>
+  );
+}
+
+function tipoDeCierre(c: CasoDashboard): string {
+  if (!c.reportId) return "—";
+  if (c.status === "FINALIZED") return c.requiresExplicitPronouncement ? "Pronunciamiento explícito" : "Ratificación directa";
+  return c.requiresExplicitPronouncement ? "Requiere pronunciamiento explícito" : "Ratificación directa posible";
+}
+
+function Campo({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] text-slate-500">{etiqueta}</dt>
+      <dd className="mt-0.5 text-[13px] font-medium text-slate-800">{children}</dd>
+    </div>
+  );
+}
+
+export function TarjetaCaso({ caso: c }: { caso: CasoDashboard }) {
+  const avisos: { texto: string; detalle?: string; tono: Tono }[] = c.attentionReasons.map((r) => ({
+    texto: ETIQUETA_ATENCION[r] ?? r,
+    detalle: DETALLE_ATENCION[r],
+    tono: r === "SIGNING_FAILED" || r === "PROCESSING_FAILED" || r === "PRE_REPORT_FAILED" || r === "PDF_FAILED" || r === "PROCESSING_RETRY_FAILED" ? "rojo" : r === "REQUIRES_PRONOUNCEMENT" ? "violeta" : "ambar",
+  }));
+  if (c.specialReview && !c.attentionReasons.includes("CONTRADICTORY_EVIDENCE")) avisos.push({ texto: "Revisión especial", tono: "ambar" });
+  if (c.identitySeverity === "INFORMATIONAL") avisos.push({ texto: "Nombre con diferencia informativa respecto de la planilla", tono: "gris" });
+  const href = `/admin/informes?${new URLSearchParams({ ...(c.batchId ? { semana: c.batchId } : {}), tramite: c.externalCaseId })}`;
+
+  return (
+    <article aria-label={`Caso ${c.externalCaseId}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-slate-500">#{c.externalCaseId}</p>
+          <p className="truncate text-sm font-semibold text-slate-900">{c.doctorName ?? "Sin médico asignado"}</p>
+        </div>
+        <InsigniaOrientacion valor={c.presentedOrientation} />
+      </header>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
+        <Campo etiqueta="Orientación IA presentada">
+          {c.presentedOrientation ? ETIQUETA_ORIENTACION[c.presentedOrientation] : "—"}
+          {c.firstOrientation && c.firstOrientation !== c.presentedOrientation && (
+            <span className="block text-[11px] font-normal text-slate-500">
+              primera: {ETIQUETA_ORIENTACION[c.firstOrientation] ?? c.firstOrientation}
+            </span>
+          )}
+        </Campo>
+        <Campo etiqueta="Pronunciamiento médico">{c.doctorDetermination ? ETIQUETA_PRONUNCIAMIENTO[c.doctorDetermination] : "Pendiente"}</Campo>
+        <Campo etiqueta="Semana">{nombreSemana(c.batchName)}</Campo>
+        <Campo etiqueta="Estado">{ETIQUETA_ESTADO[c.status]}</Campo>
+        <Campo etiqueta="Perfil de evidencia">{c.evidenceProfile ? (ETIQUETA_PERFIL[c.evidenceProfile] ?? c.evidenceProfile) : "—"}</Campo>
+        <Campo etiqueta="Tipo de cierre">{tipoDeCierre(c)}</Campo>
+        <Campo etiqueta="Tiempo operacional">{c.operationalSeconds === null ? "—" : formatoDuracion(c.operationalSeconds)}</Campo>
+        <Campo etiqueta="Tiempo médico">{c.medicalCycleSeconds === null ? "Sin registro" : formatoDuracion(c.medicalCycleSeconds)}</Campo>
+        {c.orientationReason && c.presentedOrientation === "INDETERMINATE" && (
+          <Campo etiqueta="Motivo de indeterminación">{ETIQUETA_CAUSA[c.orientationReason.category] ?? c.orientationReason.label}</Campo>
+        )}
+      </dl>
+
+      {avisos.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {avisos.map((a) => (
+            <li key={a.texto} className="flex items-start gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-700">
+              <Insignia tono={a.tono}>{a.texto}</Insignia>
+              {a.detalle && <span className="pt-0.5 text-slate-500">{a.detalle}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+      >
+        Ver expediente
+        <Icono nombre="flecha" className="h-3.5 w-3.5" />
+      </a>
+    </article>
+  );
+}
 
 export function DrawerCasos({
   filtros,
@@ -34,90 +133,69 @@ export function DrawerCasos({
   onCerrar: () => void;
 }) {
   const [offset, setOffset] = useState(0);
-  const { data, isPending, error } = useDashboardCases(filtros, segmento, { limit: POR_PAGINA, offset });
+  const { data, isPending, error, refetch, isFetching } = useDashboardCases(filtros, segmento, { limit: POR_PAGINA, offset });
+  const cerrar = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cerrar.current?.focus();
+    const alTeclear = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCerrar();
+    };
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [onCerrar]);
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/20" onClick={onCerrar}>
+    <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/25 backdrop-blur-[2px]" onClick={onCerrar}>
       <aside
         role="dialog"
+        aria-modal="true"
         aria-label={titulo}
-        className="flex h-full w-full max-w-4xl flex-col bg-white shadow-xl"
+        className="flex h-full w-full max-w-xl flex-col bg-slate-50 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between border-b border-[var(--atm-linea)] px-5 py-3">
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-800">{titulo}</h3>
-            {data && <p className="text-xs text-zinc-500">{data.total} caso{data.total === 1 ? "" : "s"}</p>}
+        <header className="flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-slate-900">{titulo}</h3>
+            <p className="mt-0.5 text-[13px] text-slate-500">
+              {data ? `${data.total} caso${data.total === 1 ? "" : "s"} en la selección` : "Cargando casos…"} · los filtros globales se mantienen
+              activos
+            </p>
           </div>
-          <button type="button" onClick={onCerrar} className="rounded-lg border border-[var(--atm-linea)] px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-50">
-            Cerrar
+          <button ref={cerrar} type="button" onClick={onCerrar} aria-label="Cerrar" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+            <Icono nombre="cerrar" />
           </button>
         </header>
 
-        <div className="flex-1 overflow-auto px-5 py-3">
+        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4" aria-busy={isFetching}>
           {error ? (
-            <p role="alert" className="text-sm text-[var(--atm-mal)]">No se pudieron cargar los casos.</p>
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              No se pudieron cargar los casos.
+              <Boton className="ml-3" onClick={() => void refetch()}>
+                Reintentar
+              </Boton>
+            </div>
           ) : isPending || !data ? (
-            <p className="text-sm text-zinc-400">Cargando…</p>
+            [0, 1, 2].map((i) => <Esqueleto key={i} className="h-44" />)
           ) : data.cases.length === 0 ? (
-            <p className="text-sm text-zinc-400">Sin casos en este segmento.</p>
+            <Vacio>Sin casos en este segmento con los filtros actuales.</Vacio>
           ) : (
-            <table className="w-full text-xs">
-              <thead className="text-left text-zinc-500">
-                <tr>
-                  <th className="py-1.5 pr-3 font-medium">Trámite</th>
-                  <th className="py-1.5 pr-3 font-medium">Semana</th>
-                  <th className="py-1.5 pr-3 font-medium">Médico</th>
-                  <th className="py-1.5 pr-3 font-medium">Orientación presentada</th>
-                  <th className="py-1.5 pr-3 font-medium">Pronunciamiento</th>
-                  <th className="py-1.5 pr-3 font-medium">Estado</th>
-                  <th className="py-1.5 pr-3 font-medium">Inicio revisión</th>
-                  <th className="py-1.5 pr-3 font-medium">Ratificado</th>
-                  <th className="py-1.5 pr-3 font-medium">Motivo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.cases.map((c) => (
-                  <tr key={c.caseId} className="border-t border-[var(--atm-linea)] align-top">
-                    <td className="py-1.5 pr-3 font-mono text-zinc-800">{c.externalCaseId}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{c.batchName ?? "—"}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{c.doctorName ?? "—"}</td>
-                    <td className="py-1.5 pr-3 text-zinc-700">
-                      {c.presentedOrientation ? ETIQUETA_ORIENTACION[c.presentedOrientation] ?? c.presentedOrientation : "—"}
-                      {c.firstOrientation && c.firstOrientation !== c.presentedOrientation && (
-                        <span className="block text-[11px] text-zinc-400">
-                          antes: {ETIQUETA_ORIENTACION[c.firstOrientation] ?? c.firstOrientation}
-                        </span>
-                      )}
-                      {c.evidenceProfile && <span className="block text-[11px] text-zinc-400">{ETIQUETA_PERFIL[c.evidenceProfile] ?? c.evidenceProfile}</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 text-zinc-700">
-                      {c.doctorDetermination ? ETIQUETA_ORIENTACION[c.doctorDetermination] : "—"}
-                      {c.corrections > 0 && <span className="block text-[11px] text-zinc-400">con corrección</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 text-zinc-700">{ETIQUETA_ESTADO[c.status]}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{c.reviewStartedAt ? fecha(c.reviewStartedAt) : "sin registro"}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{fecha(c.ratifiedAt)}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{c.attentionReason ? ETIQUETA_ATENCION[c.attentionReason] ?? c.attentionReason : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            data.cases.map((c) => <TarjetaCaso key={c.caseId} caso={c} />)
           )}
         </div>
 
         {data && data.total > POR_PAGINA && (
-          <footer className="flex items-center justify-between border-t border-[var(--atm-linea)] px-5 py-2 text-xs text-zinc-600">
-            <span>
+          <footer className="flex items-center justify-between border-t border-slate-200 bg-white px-5 py-2.5 text-[13px] text-slate-600">
+            <span className="tabular-nums">
               {offset + 1}–{Math.min(offset + POR_PAGINA, data.total)} de {data.total}
             </span>
             <span className="flex gap-2">
-              <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - POR_PAGINA))} className="rounded border border-[var(--atm-linea)] px-2 py-1 disabled:opacity-40">
+              <Boton disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - POR_PAGINA))}>
                 Anterior
-              </button>
-              <button type="button" disabled={offset + POR_PAGINA >= data.total} onClick={() => setOffset(offset + POR_PAGINA)} className="rounded border border-[var(--atm-linea)] px-2 py-1 disabled:opacity-40">
+              </Boton>
+              <Boton disabled={offset + POR_PAGINA >= data.total} onClick={() => setOffset(offset + POR_PAGINA)}>
                 Siguiente
-              </button>
+              </Boton>
             </span>
           </footer>
         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ApiFallo } from "@/lib/api";
 import { useBatches, useReports } from "@/lib/queries";
 import {
@@ -33,6 +33,18 @@ export function Informes() {
   const [fMotivo, setFMotivo] = useState("");
   /** Qué fila tiene desplegado el fundamento. */
   const [abierto, setAbierto] = useState<string | null>(null);
+  /** Nº de trámite pedido desde el dashboard («Ver expediente»). Filtro de CLIENTE. */
+  const [fTramite, setFTramite] = useState("");
+
+  // Llegar desde «Ver expediente» del dashboard: `?semana=<lote>&tramite=<nº>`.
+  // Se lee DESPUÉS de montar para que el servidor y el cliente pinten lo mismo.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const semana = p.get("semana");
+    const tramite = p.get("tramite");
+    if (semana) setFBatch(semana);
+    if (tramite) setFTramite(tramite);
+  }, []);
 
   // Las semanas las comparten cinco pantallas. Cinco minutos de frescura: un
   // lote se abre o se cierra a mano, no cambia solo.
@@ -58,11 +70,12 @@ export function Informes() {
     ),
   ];
   const motivoActivo = motivos.includes(fMotivo as OrientationReasonCategory) ? fMotivo : "";
-  const visibles = motivoActivo
+  const visibles = (motivoActivo
     ? reports.filter(
         (r) => r.orientationAssessment === "INDETERMINATE" && r.orientationReason?.category === motivoActivo,
       )
-    : reports;
+    : reports
+  ).filter((r) => !fTramite || r.externalCaseId === fTramite);
 
   /**
    * CONTADORES POR TEXTO VISIBLE. Tres estados se ven como «Ratificado»: una
@@ -130,6 +143,16 @@ export function Informes() {
               </option>
             ))}
           </Select>
+        )}
+        {fTramite && (
+          <button
+            type="button"
+            onClick={() => setFTramite("")}
+            title="Quitar el filtro por trámite"
+            className="rounded-full border border-[var(--atm-linea)] px-2.5 py-0.5 text-xs text-zinc-600 hover:bg-zinc-50"
+          >
+            Trámite {fTramite} ✕
+          </button>
         )}
         <span className="ml-auto flex items-center gap-3 text-zinc-400">
           <Refrescando visible={isFetching} />

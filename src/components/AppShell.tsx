@@ -65,7 +65,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <main className="flex-1 bg-[var(--atm-fondo)] px-6 py-8">
-        <div className="mx-auto max-w-5xl">{children}</div>
+        {/* El dashboard ejecutivo lee mejor a lo ancho (matriz, tendencias, tablas por médico); el resto conserva su columna. */}
+        <div className={`mx-auto ${pathname.startsWith("/admin/dashboard") ? "max-w-[1480px]" : "max-w-5xl"}`}>{children}</div>
       </main>
     </>
   );

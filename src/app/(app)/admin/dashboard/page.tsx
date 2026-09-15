@@ -1,18 +1,24 @@
 import { requerirSesion } from "@/lib/guard";
 import { AdminTabs } from "../AdminTabs";
-import { Dashboard } from "./Dashboard";
+import { Dashboard, type AmbitoDashboard } from "./Dashboard";
 
 export default async function DashboardPage() {
-  await requerirSesion("/admin/dashboard");
+  const sesion = await requerirSesion("/admin/dashboard");
+  // Región y contrato salen del ÁMBITO ACTIVO de la sesión, nunca de la URL.
+  const delContrato = sesion.ambitos.filter((a) => a.contractId === sesion.activoContractId);
+  const activo = delContrato.find((a) => a.regionId === sesion.activoRegionId) ?? delContrato[0];
+  const ambito: AmbitoDashboard = {
+    contrato: activo?.contractName ?? sesion.contrato,
+    region: sesion.activoRegionId ? (activo?.regionName ?? activo?.regionCode ?? "Región del ámbito activo") : null,
+    regiones: sesion.activoRegionId
+      ? []
+      : delContrato
+          .filter((a) => a.regionId)
+          .map((a) => ({ id: a.regionId as string, nombre: a.regionName ?? a.regionCode ?? "Región" })),
+  };
   return (
     <section>
-      <h2 className="mb-1 text-lg font-semibold text-zinc-900">Dashboard</h2>
-      <p className="mb-4 text-sm text-zinc-500">
-        Operación, concordancia IA–Médico, tiempos del ciclo y calidad del ámbito activo. Cada porcentaje va con su
-        denominador; lo que no tiene datos se muestra como «—».
-      </p>
-      <AdminTabs />
-      <Dashboard />
+      <Dashboard ambito={ambito} navegacion={<AdminTabs />} />
     </section>
   );
 }
