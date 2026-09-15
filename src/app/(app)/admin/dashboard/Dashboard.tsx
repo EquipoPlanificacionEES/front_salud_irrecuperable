@@ -47,26 +47,33 @@ export function semanaMasReciente(lotes: readonly BatchListItem[]): string | und
     .sort((a, b) => b.batch.createdAt.localeCompare(a.batch.createdAt))[0]?.batch.id;
 }
 
+/**
+ * ESTADO DE LA ETAPA DE PROCESAMIENTO, NO DEL SISTEMA ENTERO.
+ *
+ * `engineStatus` es la etapa `AI_PROCESSING`: su número son los casos cuyo
+ * último procesamiento falló. Las incidencias de PDF, preinforme o firma NO
+ * entran. Por eso el texto dice «Procesamiento…» y el total de incidencias
+ * técnicas abiertas va en la ayuda: nadie debe leer «1» donde hay «3».
+ */
+export function textoEstadoProcesamiento(e: DashboardOverview["engineStatus"]): string {
+  if (e.status === "OPERATIVE") return "Procesamiento operativo";
+  if (e.status === "NO_DATA") return "Procesamiento sin datos en la selección";
+  return e.openIncidents === 1
+    ? "Procesamiento con incidencia · 1 abierta"
+    : `Procesamiento con incidencias · ${e.openIncidents} abiertas`;
+}
+
 function InsigniasMotor({ d }: { d: DashboardOverview }) {
   const e = d.engineStatus;
   const versiones = d.summary.policyVersions;
+  const ayuda =
+    `Etapa de procesamiento IA de la selección. Incidencias técnicas abiertas en total ` +
+    `(procesamiento, preinforme, firma y PDF): ${d.technicalIncidents.open.cases}.`;
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {e.status === "OPERATIVE" && (
-        <Insignia tono="verde" punto title="Sin incidencias abiertas del procesamiento IA en la selección">
-          Motor operativo
-        </Insignia>
-      )}
-      {e.status === "WITH_INCIDENTS" && (
-        <Insignia tono="ambar" punto title="Incidencias técnicas abiertas del procesamiento IA en la selección">
-          Motor con incidencias · {e.openIncidents} abierta{e.openIncidents === 1 ? "" : "s"}
-        </Insignia>
-      )}
-      {e.status === "NO_DATA" && (
-        <Insignia tono="gris" punto>
-          Motor sin datos en la selección
-        </Insignia>
-      )}
+      <Insignia tono={e.status === "OPERATIVE" ? "verde" : e.status === "WITH_INCIDENTS" ? "ambar" : "gris"} punto title={ayuda}>
+        {textoEstadoProcesamiento(e)}
+      </Insignia>
       {versiones.length > 0 && <Insignia tono="gris">Orientación {versiones.map((v) => `v${v}`).join(" · ")}</Insignia>}
     </div>
   );

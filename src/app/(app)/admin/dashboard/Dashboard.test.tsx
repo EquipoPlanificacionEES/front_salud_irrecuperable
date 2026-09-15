@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { pintarConQuery } from "@/test/utils";
 import type { BatchListItem } from "@/lib/backend";
-import { Dashboard, semanaMasReciente, type AmbitoDashboard } from "./Dashboard";
+import { Dashboard, semanaMasReciente, textoEstadoProcesamiento, type AmbitoDashboard } from "./Dashboard";
 import {
   formatoDuracion,
   formatoDuracionPrecisa,
@@ -405,12 +405,14 @@ describe("Dashboard ejecutivo · resumen (Semana 9)", () => {
     expect(document.body.textContent).not.toMatch(/Errores técnicos/);
   });
 
-  it("cabecera: última actualización, Actualizar vuelve a pedir y el estado del motor se deriva", async () => {
+  it("cabecera: última actualización, Actualizar vuelve a pedir y el estado es del PROCESAMIENTO, con el total aparte", async () => {
     await pintar();
     expect(screen.getByText("Última actualización: hace 3 min")).toBeDefined();
-    expect(screen.getByText("Motor con incidencias · 1 abierta")).toBeDefined();
+    // 1 incidencia de procesamiento de 3 abiertas: el texto no puede sugerir que hay 1 en total.
+    expect(screen.getByText("Procesamiento con incidencia · 1 abierta")).toBeDefined();
+    expect(screen.getByTitle(/Incidencias técnicas abiertas en total \(procesamiento, preinforme, firma y PDF\): 3\./)).toBeDefined();
     expect(screen.getByText("Orientación v1.2.0")).toBeDefined();
-    expect(screen.queryByText("Motor operativo")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Motor (operativo|con incidencias)/);
     const antes = llamadas("/admin/dashboard/overview").length;
     fireEvent.click(screen.getByRole("button", { name: "Actualizar" }));
     await waitFor(() => expect(llamadas("/admin/dashboard/overview").length).toBeGreaterThan(antes));
@@ -596,6 +598,13 @@ describe("Dashboard ejecutivo · formato, semana por defecto y permisos", () => 
     expect(nombreSemana("SEMANA_09_2026")).toBe("Semana 9");
     expect(nombreSemana("LOTE-DE-PRUEBA")).toBe("LOTE-DE-PRUEBA");
     expect(haceCuanto(new Date(Date.now() - 20_000).toISOString())).toBe("hace menos de 1 min");
+  });
+
+  it("el estado de la cabecera nombra su alcance: procesamiento, singular y plural", () => {
+    expect(textoEstadoProcesamiento({ status: "WITH_INCIDENTS", openIncidents: 1 })).toBe("Procesamiento con incidencia · 1 abierta");
+    expect(textoEstadoProcesamiento({ status: "WITH_INCIDENTS", openIncidents: 3 })).toBe("Procesamiento con incidencias · 3 abiertas");
+    expect(textoEstadoProcesamiento({ status: "OPERATIVE", openIncidents: 0 })).toBe("Procesamiento operativo");
+    expect(textoEstadoProcesamiento({ status: "NO_DATA", openIncidents: 0 })).toBe("Procesamiento sin datos en la selección");
   });
 
   it("la semana por defecto es la más reciente con casos", () => {
