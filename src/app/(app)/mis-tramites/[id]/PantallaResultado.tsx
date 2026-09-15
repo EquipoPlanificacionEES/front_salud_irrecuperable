@@ -617,6 +617,22 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * que el pronunciamiento tiene que ponerlo él.
    */
   const antecedentesDestacados = cap.canResolveAndApprove;
+  /**
+   * EL INFORME NO SE FIRMA TAL COMO ESTÁ y el médico tiene que pronunciarse.
+   *
+   * Dos situaciones con el mismo camino y distinto aviso, distinguidas por lo
+   * que el propio documento imprime en la Sección V:
+   *   · sin casilla marcada — no hay evaluación que ratificar;
+   *   · con casilla marcada — hay una, pero el informe arrastra una limitación
+   *     que obliga a que el profesional la confirme (p. ej. el cómputo de
+   *     licencias no se pudo completar). Decir aquí «no trae evaluación» sería
+   *     falso: el médico la está viendo impresa.
+   */
+  const requierePronunciamiento = !cap.canApprove && cap.canResolveAndApprove;
+  const casillaImpresa = rep.document.proposal.options.some((o) => o.checked);
+  const avisoPronunciamiento = casillaImpresa
+    ? "Este informe no se puede ratificar tal como está. Confirma tu pronunciamiento (Salud recuperable o Salud irrecuperable) y la conclusión antes de ratificar."
+    : "Este informe no trae una evaluación marcada. Debes emitir tu pronunciamiento (Salud recuperable o Salud irrecuperable) antes de ratificar.";
 
   return (
     <div
@@ -980,7 +996,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                 {modo === "resolver"
                   ? busy
                     ? "Ratificando…"
-                    : "Ratificar"
+                    : "Ratificar con este pronunciamiento"
                   : busy
                     ? "Guardando…"
                     : "Guardar corrección"}
@@ -988,22 +1004,33 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
+              {/*
+                DEBE PRONUNCIARSE ANTES DE RATIFICAR. Cuando el informe no se
+                puede firmar tal como está (`canResolveAndApprove`), el botón ya
+                no se llama igual que el de firmar directo: abre el formulario y
+                lo dice. El aviso describe el INFORME —con o sin casilla marcada—
+                y nunca a la máquina: nada de «IA», «modelo» ni «indeterminada».
+              */}
+              {requierePronunciamiento && (
+                <p role="note" className="w-full text-sm text-zinc-700">
+                  {avisoPronunciamiento}
+                </p>
+              )}
               {cap.canRequestChanges && (
                 <button onClick={() => abrirFormulario("modificar")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
                   No estoy de acuerdo, corregir
                 </button>
               )}
-              {/* UN SOLO BOTÓN. Cuando el informe ya propone una evaluación,
-                  ratifica; cuando no propone ninguna, abre el formulario donde
-                  el médico la aporta y luego ratifica. Para él es la misma
-                  acción, y así debe ser: la diferencia es del sistema, no suya. */}
+              {/* Cuando el informe ya se puede firmar tal como está, «Ratificar»
+                  firma. Cuando no, el mismo lugar abre el formulario donde el
+                  médico emite o confirma su pronunciamiento, y se llama así. */}
               {puedeRatificar && (
                 <button
                   onClick={cap.canApprove ? ratificar : () => abrirFormulario("resolver")}
                   disabled={busy || !cap.hasActiveSignature}
                   className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40"
                 >
-                  {busy ? "Ratificando…" : "Ratificar"}
+                  {busy ? "Ratificando…" : cap.canApprove ? "Ratificar" : "Definir pronunciamiento y ratificar"}
                 </button>
               )}
               {!cap.hasActiveSignature && (

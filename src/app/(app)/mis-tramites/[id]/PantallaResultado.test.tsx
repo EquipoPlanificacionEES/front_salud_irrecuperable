@@ -21,6 +21,10 @@ import { PantallaResultado } from "./PantallaResultado";
 
 const RECTIFICAR = /no estoy de acuerdo, corregir/i;
 const RATIFICAR = /^ratificar$/i;
+/** El botón cuando el informe NO se firma tal cual: abre el formulario de pronunciamiento. */
+const DEFINIR = /^definir pronunciamiento y ratificar$/i;
+/** El botón final dentro de ese formulario. */
+const CONFIRMAR_RESOLUCION = /^ratificar con este pronunciamiento$/i;
 
 /** Licencia sintética. Sin datos de ninguna persona real. */
 function licencia(n: number, effectiveState: string, countsForThreshold = false) {
@@ -710,13 +714,106 @@ const ANTECEDENTES = /ver antecedentes/i;
 
 const SIN_PROPUESTA = { canRequestChanges: true, canApprove: false, canResolveAndApprove: true };
 
+describe("PantallaResultado · ratificar exige pronunciamiento cuando el informe no se firma tal cual", () => {
+  /** El informe tal como llega, con la Sección V impresa marcada o no. */
+  const conCasilla = (caps: Parameters<typeof informe>[0], marcada: "RECUPERABLE" | "IRRECUPERABLE" | null) => {
+    const base = informe(caps);
+    return {
+      ...base,
+      document: {
+        ...base.document,
+        proposal: {
+          options: [
+            { label: "Salud recuperable", checked: marcada === "RECUPERABLE" },
+            { label: "Salud irrecuperable", checked: marcada === "IRRECUPERABLE" },
+          ],
+          note: marcada === null ? "Sin selección representable con los antecedentes disponibles." : null,
+        },
+      },
+    };
+  };
+  async function pintarCon(cuerpo: unknown) {
+    const fetchMock = fetchDevolviendo(cuerpo);
+    vi.stubGlobal("fetch", fetchMock);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+    return fetchMock;
+  }
+  const AVISO_SIN_CASILLA = /Este informe no trae una evaluación marcada\. Debes emitir tu pronunciamiento \(Salud recuperable o Salud irrecuperable\) antes de ratificar\./;
+  const AVISO_CON_CASILLA = /Este informe no se puede ratificar tal como está\. Confirma tu pronunciamiento/;
+
+  it("A · canApprove=true → el botón es «Ratificar», sin aviso, y firma directo", async () => {
+    const fetchMock = await pintarCon(conCasilla({ canRequestChanges: true, canApprove: true }, "RECUPERABLE"));
+    expect(screen.getByRole("button", { name: RATIFICAR })).toBeDefined();
+    expect(screen.queryByRole("button", { name: DEFINIR })).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: RATIFICAR }));
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => /\/approve$/.test(String(c[0])))).toBe(true));
+  });
+
+  it("B · canApprove=false + canResolveAndApprove=true → «Definir pronunciamiento y ratificar»", async () => {
+    await pintarCon(conCasilla(SIN_PROPUESTA, null));
+    expect(screen.getByRole("button", { name: DEFINIR })).toBeDefined();
+    expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
+  });
+
+  it("C · sin casilla marcada → el aviso de que no trae evaluación", async () => {
+    await pintarCon(conCasilla(SIN_PROPUESTA, null));
+    expect(screen.getByRole("note").textContent).toMatch(AVISO_SIN_CASILLA);
+  });
+
+  it("C · con casilla marcada pero no firmable tal cual (cómputo no disponible) → aviso de confirmar, sin decir que no hay evaluación", async () => {
+    await pintarCon(conCasilla(SIN_PROPUESTA, "RECUPERABLE"));
+    const aviso = screen.getByRole("note").textContent ?? "";
+    expect(aviso).toMatch(AVISO_CON_CASILLA);
+    expect(aviso).not.toMatch(/no trae una evaluación/);
+    expect(screen.getByRole("button", { name: DEFINIR })).toBeDefined();
+  });
+
+  it("D · el formulario sin selección deja el botón final deshabilitado", async () => {
+    await pintarCon(conCasilla(SIN_PROPUESTA, null));
+    await abrirEditor(DEFINIR);
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), { target: { value: "Conclusión del profesional." } });
+    expect((screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: RATIFICAR })).toBeNull();
+  });
+
+  it.each([
+    ["E", /SALUD RECUPERABLE/i, "RECOVERABLE"],
+    ["F", /SALUD IRRECUPERABLE/i, "IRRECOVERABLE"],
+  ])("%s · elige la evaluación y escribe conclusión → «Ratificar con este pronunciamiento» resuelve", async (_l, radio, esperado) => {
+    const fetchMock = await pintarCon(conCasilla(SIN_PROPUESTA, null));
+    await abrirEditor(DEFINIR);
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), { target: { value: "Conclusión del profesional." } });
+    fireEvent.click(screen.getByRole("radio", { name: radio }));
+    const confirmar = screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLButtonElement;
+    expect(confirmar.disabled).toBe(false);
+    fireEvent.click(confirmar);
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/resolve-and-approve"))).toBe(true));
+    const { init } = llamadaA(fetchMock, "/resolve-and-approve");
+    expect((JSON.parse(init.body) as { assessment: string }).assessment).toBe(esperado);
+    expect(fetchMock.mock.calls.some((c) => /\/approve$/.test(String(c[0])))).toBe(false);
+  });
+
+  it("G · el texto que ve el médico no habla de IA, modelo, orientación automática ni indeterminación", async () => {
+    for (const marcada of [null, "RECUPERABLE"] as const) {
+      cleanup();
+      await pintarCon(conCasilla(SIN_PROPUESTA, marcada));
+      const barra = screen.getByTestId("barra-acciones").textContent ?? "";
+      for (const prohibido of [/\bIA\b/, /modelo/i, /orientación automática/i, /indeterminad/i, /inteligencia artificial/i]) {
+        expect(barra, `${String(prohibido)} con casilla ${marcada}`).not.toMatch(prohibido);
+      }
+    }
+  });
+});
+
 describe("PantallaResultado · resolver un informe sin propuesta", () => {
   it("se ofrecen las MISMAS tres acciones que en un informe con propuesta", async () => {
     await pintar(SIN_PROPUESTA);
 
     expect(screen.getByRole("link", { name: ANTECEDENTES })).toBeDefined();
     expect(screen.getByRole("button", { name: RECTIFICAR })).toBeDefined();
-    expect(screen.getByRole("button", { name: RATIFICAR })).toBeDefined();
+    expect(screen.getByRole("button", { name: DEFINIR })).toBeDefined();
   });
 
   it("NO se le explica al médico que el sistema no concluyó", async () => {
@@ -770,7 +867,7 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
     const llamadasIniciales = fetchMock.mock.calls.length;
 
-    await abrirEditor(RATIFICAR);
+    await abrirEditor(DEFINIR);
 
     // Sólo se pidió el formulario: no se ha mandado ninguna decisión.
     expect(fetchMock.mock.calls.length).toBe(llamadasIniciales + 1);
@@ -783,14 +880,14 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    await abrirEditor(RATIFICAR);
+    await abrirEditor(DEFINIR);
     fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
 
     // Ninguna casilla viene premarcada: elegir es del médico.
     expect(screen.getAllByRole("radio").filter((r) => (r as HTMLInputElement).checked)).toHaveLength(0);
-    const confirmar = screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLButtonElement;
+    const confirmar = screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLButtonElement;
     expect(confirmar.disabled).toBe(true);
   });
 
@@ -799,13 +896,13 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    await abrirEditor(RATIFICAR);
+    await abrirEditor(DEFINIR);
     fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
     fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "   " },
     });
 
-    const confirmar = screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLButtonElement;
+    const confirmar = screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLButtonElement;
     expect(confirmar.disabled).toBe(true);
   });
 
@@ -815,13 +912,13 @@ describe("PantallaResultado · resolver un informe sin propuesta", () => {
     pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    await abrirEditor(RATIFICAR);
+    await abrirEditor(DEFINIR);
     fireEvent.change(screen.getByLabelText(/Conclusión general/), {
       target: { value: "Conclusión escrita por el profesional." },
     });
     // El primer radio es IRRECOVERABLE (ver el orden en la pantalla).
     fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
-    fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
     const { url, init } = llamadaA(fetchMock, "/resolve-and-approve");
@@ -916,7 +1013,7 @@ describe("PantallaResultado · descargas", () => {
     expect(screen.getByRole("link", { name: ANTECEDENTES })).toBeDefined();
     expect(screen.queryByRole("button", { name: DESCARGA_BORRADOR })).toBeNull();
     expect(screen.queryByRole("link", { name: DESCARGA_BORRADOR })).toBeNull();
-    expect(screen.getByRole("button", { name: RATIFICAR })).toBeDefined();
+    expect(screen.getByRole("button", { name: DEFINIR })).toBeDefined();
     expect(screen.getByRole("button", { name: RECTIFICAR })).toBeDefined();
   });
 
@@ -1085,7 +1182,7 @@ describe("PantallaResultado · formulario estructurado", () => {
     vi.stubGlobal("fetch", fetchMock);
     pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
-    await abrirEditor(RATIFICAR);
+    await abrirEditor(DEFINIR);
     return fetchMock;
   }
 
@@ -1133,7 +1230,7 @@ describe("PantallaResultado · formulario estructurado", () => {
     fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
     // Sólo una de las dos cifras.
     fireEvent.change(screen.getByLabelText("Total días autorizados"), { target: { value: "764" } });
-    fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
     const cuerpo = JSON.parse(llamadaA(fetchMock, "/resolve-and-approve").init.body) as {
@@ -1154,7 +1251,7 @@ describe("PantallaResultado · formulario estructurado", () => {
       target: { value: "Conclusión del profesional." },
     });
     fireEvent.click(screen.getByRole("radio", { name: /SALUD IRRECUPERABLE/i }));
-    fireEvent.click(screen.getAllByRole("button", { name: RATIFICAR }).at(-1) as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
     const cuerpo = JSON.parse(llamadaA(fetchMock, "/resolve-and-approve").init.body) as {
@@ -1207,7 +1304,7 @@ describe("PantallaResultado · salir con trabajo sin guardar", () => {
     vi.stubGlobal("fetch", fetchDevolviendo(conTodasLasSecciones(informe(SIN_PROPUESTA))));
     pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
-    await abrirEditor(RATIFICAR);
+    await abrirEditor(DEFINIR);
   }
 
   const cancelar = () => fireEvent.click(screen.getByRole("button", { name: /^cancelar$/i }));
