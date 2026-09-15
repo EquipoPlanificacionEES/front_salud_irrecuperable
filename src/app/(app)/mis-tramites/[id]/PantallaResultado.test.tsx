@@ -287,19 +287,40 @@ async function abrirEditor(nombre: RegExp) {
 }
 
 describe("PantallaResultado · barra fija de acciones", () => {
-  it("G · con la barra visible, la ficha reserva espacio inferior para que no tape el último control", async () => {
+  it("C · el hueco final mide lo que la barra REAL: un contenido largo sube entero por encima", async () => {
+    // jsdom no maqueta: se simula una barra de 140px (dos líneas de botones).
+    const avisar: { cb: (() => void) | null } = { cb: null };
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) { avisar.cb = cb; }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const alto = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ height: 140 } as DOMRect);
     await pintar(PUEDE_ACTUAR);
     await abrirEditor(RECTIFICAR);
+    avisar.cb?.();
+
     const ficha = screen.getByTestId("ficha-caso");
-    expect(ficha.className).toMatch(/\bpb-32\b/);
-    // Y la barra sigue fija al viewport.
-    const barra = screen.getByRole("button", { name: "Guardar corrección" }).closest(".fixed");
-    expect(barra).not.toBeNull();
+    await waitFor(() => expect(ficha.style.getPropertyValue("--altura-barra-acciones")).toBe("140px"));
+    // El hueco es el ÚLTIMO hijo de la ficha: nada queda detrás de la barra.
+    const hueco = screen.getByTestId("hueco-barra-acciones");
+    expect(ficha.lastElementChild).toBe(hueco);
+    expect(hueco.style.height).toBe("calc(var(--altura-barra-acciones, 7rem) + 1.5rem)");
+    // Y la barra es una banda opaca pegada abajo, sin margen transparente por donde se vea el texto.
+    const barra = screen.getByTestId("barra-acciones");
+    expect(barra.className).toMatch(/\bfixed\b/);
+    expect(barra.className).toMatch(/\bbottom-0\b/);
+    expect(barra.className).toMatch(/\bbg-\[var\(--atm-fondo\)\]/);
+    alto.mockRestore();
   });
 
-  it("G · sin acciones no se reserva el espacio", async () => {
+  it("C · sin acciones no hay barra ni hueco", async () => {
     await pintar({ canRequestChanges: false, canApprove: false });
-    expect(screen.getByTestId("ficha-caso").className).not.toMatch(/\bpb-32\b/);
+    expect(screen.queryByTestId("barra-acciones")).toBeNull();
+    expect(screen.queryByTestId("hueco-barra-acciones")).toBeNull();
   });
 });
 

@@ -588,6 +588,81 @@ describe("hidratación del informe efectivo", () => {
   });
 });
 
+describe("TPI y texto original del sistema", () => {
+  const TPI = (valor: string, extra: Partial<CampoFormulario> = {}) =>
+    campo("tpiStage", "Etapa del trámite de invalidez (TPI)", "TEXT", valor, { sourceType: "SOURCE_EXTRACTION", ...extra });
+  const LARGO = "Diagnóstico principal: cuadro sintético.\n\n" + "Párrafo largo del sistema. ".repeat(60);
+  const formCon = (fields: CampoFormulario[], id: "II" | "III" = "II"): FormularioInforme => ({
+    reportSnapshotId: "00000000-0000-4000-8000-000000000004",
+    version: 1,
+    sections: [{ id, title: id === "II" ? "II. ANTECEDENTES" : "III. ANÁLISIS", fields }],
+  });
+  function BancoCon({ form }: { form: FormularioInforme }) {
+    const [b, setB] = useState<Borrador>(borradorInicial(form));
+    return <EditorInforme form={form} borrador={b} onChange={setB} />;
+  }
+  const selector = () => screen.getByLabelText("Etapa del trámite de invalidez (TPI)") as HTMLSelectElement;
+
+  it("A · NO_TPI se muestra «No» en el control y en la leyenda, nunca el código", () => {
+    render(<BancoCon form={formCon([TPI("NO_TPI")])} />);
+    expect(selector().value).toBe("NO_TPI");
+    expect(selector().selectedOptions[0]?.textContent).toBe("No");
+    expect(screen.getAllByText("No").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("NO_TPI")).toBeNull();
+  });
+
+  it.each([
+    ["IN_PROGRESS", "En trámite"],
+    ["FINAL_EXECUTED", "Ejecutoriado"],
+    ["UNKNOWN", "No consta en el expediente"],
+  ])("B · %s se muestra «%s»", (codigo, etiqueta) => {
+    render(<BancoCon form={formCon([TPI(codigo)])} />);
+    expect(selector().selectedOptions[0]?.textContent).toBe(etiqueta);
+    expect(screen.queryByText(codigo)).toBeNull();
+  });
+
+  it("B · lo que se guarda sigue siendo el código, y sólo si cambió", () => {
+    const form = formCon([
+      TPI("NO_TPI"),
+      campo("conclusion", "Conclusión general", "LONG_TEXT", "Conclusión.", { required: true }),
+      campo("assessment", "Evaluación", "CHOICE", "", { required: true }),
+    ]);
+    const b = borradorInicial(form);
+    const sinCambio = cuerpoDeCorreccion(form, { ...b, valores: { ...b.valores, assessment: "RECOVERABLE" } });
+    expect(sinCambio).not.toHaveProperty("figureTexts");
+    const conCambio = cuerpoDeCorreccion(form, { ...b, valores: { ...b.valores, assessment: "RECOVERABLE", tpiStage: "IN_PROGRESS" } });
+    expect(conCambio).toMatchObject({ figureTexts: { tpiStage: "IN_PROGRESS" } });
+  });
+
+  it("D · un análisis largo del sistema: textarea con el texto y el original disponible pero PLEGADO", () => {
+    render(<BancoCon form={formCon([campo("clinicalAnalysis", "Análisis de antecedentes clínicos", "LONG_TEXT", LARGO, { sourceType: "ENGINE_NARRATIVE" })], "III")} />);
+    expect((screen.getByLabelText("Análisis de antecedentes clínicos") as HTMLTextAreaElement).value).toBe(LARGO);
+    const original = screen.getByTestId("original-clinicalAnalysis") as HTMLDetailsElement;
+    expect(original.open).toBe(false);
+    expect(screen.getByText("Ver texto original del sistema")).toBeDefined();
+    expect(screen.getByText(/Valor generado por el sistema/)).toBeDefined();
+    fireEvent.click(screen.getByText("Ver texto original del sistema"));
+    expect(original.open).toBe(true);
+  });
+
+  it("E · con corrección humana: textarea con la del médico y el original del sistema sigue accesible", () => {
+    render(
+      <BancoCon
+        form={formCon([
+          campo("clinicalAnalysis", "Análisis de antecedentes clínicos", "LONG_TEXT", LARGO, {
+            sourceType: "ENGINE_NARRATIVE", doctorValue: "Análisis del médico.", effectiveValue: "Análisis del médico.", value: "Análisis del médico.",
+          }),
+        ], "III")}
+      />,
+    );
+    expect((screen.getByLabelText("Análisis de antecedentes clínicos") as HTMLTextAreaElement).value).toBe("Análisis del médico.");
+    expect(screen.getByText("Arriba, tu versión.")).toBeDefined();
+    const original = screen.getByTestId("original-clinicalAnalysis") as HTMLDetailsElement;
+    expect(original.open).toBe(false);
+    expect(original.textContent).toContain("Párrafo largo del sistema.");
+  });
+});
+
 describe("secciones", () => {
   it("la identificación viene plegada: no es lo que se corrige a diario", () => {
     render(<Banco />);

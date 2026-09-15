@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCaseReport, useCita, useDoctorInbox, useInvalidar, usePeritaje } from "@/lib/queries";
 import { queryKeys } from "@/lib/query-keys";
@@ -154,10 +154,6 @@ interface Report {
 }
 
 type Evaluacion = "RECOVERABLE" | "IRRECOVERABLE";
-
-/** Alto de la barra fija de acciones (~72px) + margen: nada del editor queda debajo. */
-const ESPACIO_BARRA_ACCIONES = "pb-32";
-
 const ESTADO: Record<ReportWorkflowStatus, { texto: string; chip: string; aviso?: { tono: "info" | "ok" | "obs" | "mal"; texto: string } }> = {
   READY_FOR_REVIEW: {
     texto: "Por revisar",
@@ -362,6 +358,23 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    * amplía el contrato y esta pantalla no cambia.
    */
   const [borrador, setBorrador] = useState<Borrador>({ valores: {}, motivo: "", nota: "" });
+  /**
+   * ALTO REAL DE LA BARRA FIJA DE ACCIONES. Se mide con ResizeObserver —cambia
+   * al pasar de ver a editar, al confirmar un descarte o si los botones bajan de
+   * línea— y alimenta el hueco final de la ficha. Ref de callback: la barra
+   * aparece y desaparece con las capacidades.
+   */
+  const [altoBarra, setAltoBarra] = useState<number | null>(null);
+  const observadorBarra = useRef<ResizeObserver | null>(null);
+  const medirBarra = useCallback((el: HTMLDivElement | null) => {
+    observadorBarra.current?.disconnect();
+    observadorBarra.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const medir = () => setAltoBarra(Math.ceil(el.getBoundingClientRect().height));
+    observadorBarra.current = new ResizeObserver(medir);
+    observadorBarra.current.observe(el);
+    medir();
+  }, []);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
   /**
@@ -606,10 +619,11 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const antecedentesDestacados = cap.canResolveAndApprove;
 
   return (
-    /* La barra de acciones es FIJA al viewport: sin este margen inferior, el
-       último campo del editor —o la casilla de la Sección V— quedaba debajo
-       de ella y no se podía ver ni pulsar. */
-    <div className={puedeActuar ? `space-y-4 ${ESPACIO_BARRA_ACCIONES}` : "space-y-4"} data-testid="ficha-caso">
+    <div
+      className="space-y-4"
+      data-testid="ficha-caso"
+      style={altoBarra ? ({ "--altura-barra-acciones": `${altoBarra}px` } as React.CSSProperties) : undefined}
+    >
       {/* Cabecera */}
       <div className="rounded-xl border border-[var(--atm-linea)] bg-white px-5 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -911,8 +925,17 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           se veía, que para quien tiene que rectificar es lo mismo que no
           estar. */}
       {puedeActuar && (
-        <div className="fixed inset-x-0 bottom-4 z-20 mx-auto w-full max-w-5xl px-6">
-        <div className="rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-lg">
+        /* UNA BANDA OPACA A TODO EL ANCHO, pegada al borde inferior. La tarjeta
+           flotaba con un margen transparente alrededor, y por ese margen se veía
+           pasar el texto del editor. Su alto real se mide y alimenta el hueco
+           final de la ficha (`--altura-barra-acciones`): crece si los botones
+           bajan de línea o aparece la confirmación de descarte. */
+        <div
+          ref={medirBarra}
+          data-testid="barra-acciones"
+          className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)] px-6 py-3"
+        >
+        <div className="mx-auto w-full max-w-[61rem] rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-lg">
           {editando && confirmandoDescarte ? (
             /* EL PASO QUE FALTABA. Dice QUÉ se pierde antes de perderlo, y deja
                la salida y la vuelta a la misma distancia. */
@@ -994,8 +1017,18 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
         </div>
       )}
 
-      {/* Hueco para que la barra fija no tape el final del informe. */}
-      {puedeActuar && <div aria-hidden className="h-24" />}
+      {/* Hueco final: el alto MEDIDO de la barra fija más un margen. Así el último
+          control de cualquier sección —también un texto largo— se puede
+          desplazar por completo por encima de ella. Sin medición (primer pintado,
+          navegadores sin ResizeObserver) vale 7rem, holgado para la barra de una
+          línea. */}
+      {puedeActuar && (
+        <div
+          aria-hidden
+          data-testid="hueco-barra-acciones"
+          style={{ height: "calc(var(--altura-barra-acciones, 7rem) + 1.5rem)" }}
+        />
+      )}
     </div>
   );
 }

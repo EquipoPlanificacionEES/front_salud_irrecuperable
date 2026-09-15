@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { describirEtapaTpi, ETAPAS_TPI, esEtapaTpi } from "@/lib/tpi";
 
 /**
  * EL EDITOR DEL INFORME — uno solo, para los tres desenlaces.
@@ -76,7 +77,9 @@ export function textoDelSistema(f: CampoFormulario): string {
     case "NOT_DETERMINED":
       return f.sourceType === "SOURCE_EXTRACTION" ? "No disponible" : "No determinado por el sistema";
     default:
-      return f.systemValue === "" ? "—" : f.systemValue;
+      if (f.systemValue === "") return "—";
+      // Los códigos no se enseñan: el informe dice «No», no `NO_TPI`.
+      return f.key === "tpiStage" ? describirEtapaTpi(f.systemValue) : f.systemValue;
   }
 }
 
@@ -417,6 +420,28 @@ function Campo({
             </label>
           ))}
         </div>
+      ) : campo.key === "tpiStage" ? (
+        /*
+          LA ETAPA DEL TPI ES UN CÓDIGO CON CATÁLOGO, no texto libre: el informe
+          traduce el código («NO_TPI» → «No») y un texto escrito a mano saldría
+          impreso como «No consta en el expediente». Se elige entre las etiquetas
+          del informe y se guarda el código, como siempre.
+        */
+        <select
+          id={id}
+          className={entrada}
+          value={valor}
+          disabled={!campo.editable}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {valor === "" && <option value="">Sin dato</option>}
+          {valor !== "" && !esEtapaTpi(valor) && <option value={valor}>{valor}</option>}
+          {(Object.keys(ETAPAS_TPI) as (keyof typeof ETAPAS_TPI)[]).map((codigo) => (
+            <option key={codigo} value={codigo}>
+              {ETAPAS_TPI[codigo]}
+            </option>
+          ))}
+        </select>
       ) : largo ? (
         <textarea
           id={id}
@@ -454,6 +479,8 @@ function Campo({
             </span>
           )}
         </p>
+      ) : largo && determinado && campo.systemValue !== "" ? (
+        <OriginalDelSistema campo={campo} modificado={modificado} onRestaurar={onRestaurar} />
       ) : (
       <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
         <span className="text-zinc-400">{ORIGEN[campo.sourceType]}:</span>
@@ -471,6 +498,47 @@ function Campo({
         )}
       </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * EL TEXTO ORIGINAL DEL SISTEMA, disponible pero plegado.
+ *
+ * En la Sección III el original puede medir varias pantallas, y repetido
+ * entero bajo el textarea duplicaba el informe. No se elimina ni se esconde
+ * para siempre: se dice de dónde viene lo que hay arriba y se abre a un clic.
+ */
+function OriginalDelSistema({
+  campo,
+  modificado,
+  onRestaurar,
+}: {
+  campo: CampoFormulario;
+  modificado: boolean;
+  onRestaurar: () => void;
+}) {
+  const corregido = campo.doctorValue !== null || modificado;
+  return (
+    <div className="mt-1 text-xs text-zinc-500">
+      <p className="flex flex-wrap items-center gap-x-2">
+        <span className="text-zinc-400">
+          {corregido ? "Arriba, tu versión." : "Valor generado por el sistema: es el texto de arriba, sin cambios."}
+        </span>
+        {modificado && (
+          <button type="button" onClick={onRestaurar} className="text-[var(--atm-azul)] underline underline-offset-2">
+            restaurar
+          </button>
+        )}
+      </p>
+      <details className="mt-1" data-testid={`original-${campo.key}`}>
+        <summary className="cursor-pointer select-none font-medium text-[var(--atm-azul)]">
+          Ver texto original del sistema
+        </summary>
+        <p className="mt-1 whitespace-pre-wrap rounded-lg border border-[var(--atm-linea)] bg-[var(--atm-fondo)] p-3 text-zinc-600">
+          {campo.systemValue}
+        </p>
+      </details>
     </div>
   );
 }
