@@ -3,13 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
 import { useInvalidar, useSignature } from "@/lib/queries";
-import { useSesion } from "@/components/SesionProvider";
 
-// GET /api/v1/doctors/me/signature   → estado (hay firma, versión, tamaño)
-// PUT /api/v1/doctors/me/signature   → sube el PNG/JPG como cuerpo BINARIO
+// GET /api/v1/doctors/me/signature          → estado (hay firma, versión, tamaño)
+// GET /api/v1/doctors/me/signature/render   → la firma TAL COMO SE IMPRIME (PNG derivado)
+// PUT /api/v1/doctors/me/signature          → sube el PNG/JPG como cuerpo BINARIO
 //
-// El backend NO devuelve los bytes de la firma vigente (por diseño). Para que el
-// médico igual la VEA, guardamos la última imagen que subió en este navegador.
+// LA VISTA PREVIA ES LA DEL INFORME. La produce el worker con la misma función
+// que usa al firmar —fondo quitado, recortada al trazo— y el backend la sirve
+// sólo a su dueño. Esta pantalla no la recalcula ni la aproxima: si la dibujara
+// el navegador, «así se verá» sería una promesa y no un hecho.
+//
+// Antes se guardaba en este navegador la imagen ORIGINAL subida, para poder
+// verla. Ya no hace falta, y la rúbrica de una persona no tiene por qué quedar
+// en el almacenamiento local: se limpia lo que hubiera.
 
 interface Estado {
   hasActiveSignature: boolean;
@@ -25,11 +31,73 @@ interface Estado {
 }
 
 const MAX_KB = 400;
+const MAX_INTENTOS = 15;
+
+/** Fondo de cuadros para que se vea qué parte es transparente. */
+const CUADROS =
+  "bg-[length:16px_16px] bg-[linear-gradient(45deg,#e4e4e7_25%,transparent_25%),linear-gradient(-45deg,#e4e4e7_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e4e4e7_75%),linear-gradient(-45deg,transparent_75%,#e4e4e7_75%)] bg-[position:0_0,0_8px,8px_-8px,-8px_0]";
+
+type Impresa =
+  | { estado: "cargando" }
+  | { estado: "lista"; url: string }
+  | { estado: "error"; texto: string };
+
+/**
+ * Pide la firma tal como se imprime. Mientras el worker la prepara el backend
+ * responde 202 y se vuelve a preguntar; el objeto URL se libera al cambiar de
+ * versión o al salir.
+ */
+export function useFirmaImpresa(version: number | null): Impresa | null {
+  const [impresa, setImpresa] = useState<Impresa | null>(null);
+
+  useEffect(() => {
+    if (version === null) {
+      setImpresa(null);
+      return;
+    }
+    let vivo = true;
+    let url: string | null = null;
+    let espera: ReturnType<typeof setTimeout> | undefined;
+    setImpresa({ estado: "cargando" });
+
+    const pedir = async (intento: number) => {
+      try {
+        const res = await fetch("/api/v1/doctors/me/signature/render", { credentials: "same-origin", cache: "no-store" });
+        if (!vivo) return;
+        if (res.status === 202) {
+          if (intento >= MAX_INTENTOS) {
+            setImpresa({ estado: "error", texto: "La vista previa está tardando. Vuelve a entrar en un momento." });
+            return;
+          }
+          const cuerpo = (await res.json().catch(() => null)) as { retryAfterSeconds?: number } | null;
+          espera = setTimeout(() => void pedir(intento + 1), (cuerpo?.retryAfterSeconds ?? 2) * 1000);
+          return;
+        }
+        if (!res.ok) {
+          setImpresa({ estado: "error", texto: "No se pudo cargar la vista previa de tu firma." });
+          return;
+        }
+        const blob = await res.blob();
+        if (!vivo) return;
+        url = URL.createObjectURL(blob);
+        setImpresa({ estado: "lista", url });
+      } catch {
+        if (vivo) setImpresa({ estado: "error", texto: "No se pudo cargar la vista previa de tu firma." });
+      }
+    };
+    void pedir(1);
+
+    return () => {
+      vivo = false;
+      if (espera) clearTimeout(espera);
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [version]);
+
+  return impresa;
+}
 
 export function MiFirma() {
-  const { sesion } = useSesion();
-  const cacheKey = `firma:${sesion.uid}`;
-  const [imagenLocal, setImagenLocal] = useState<string | null>(null);
   const [nueva, setNueva] = useState<{ dataUrl: string; file: File } | null>(null);
   const [cambiando, setCambiando] = useState(false);
   const [arrastra, setArrastra] = useState(false);
@@ -47,17 +115,22 @@ export function MiFirma() {
     : null;
   const cargar = () => invalidar.firmaCambiada();
 
+  const s = estado?.signature;
+  const tieneFirma = !!estado?.hasActiveSignature && !!s;
+  const impresa = useFirmaImpresa(tieneFirma && s ? s.version : null);
+
   useEffect(() => {
-    // La IMAGEN de la firma sí se guarda en este navegador, y sólo aquí: el
-    // backend no devuelve sus bytes por diseño. Va bajo una clave por usuario y
-    // no es un dato clínico. El ESTADO de la firma viaja por la caché en
-    // memoria, como todo lo demás.
+    // Limpieza de la copia local de la firma original que guardaban versiones
+    // anteriores de esta pantalla.
     try {
-      setImagenLocal(localStorage.getItem(cacheKey));
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k?.startsWith("firma:")) localStorage.removeItem(k);
+      }
     } catch {
       /* sin localStorage */
     }
-  }, [cacheKey]);
+  }, []);
 
   function tomarArchivo(f: File | undefined) {
     if (!f) return;
@@ -94,14 +167,8 @@ export function MiFirma() {
         headers: { "Content-Type": nueva.file.type },
         body: nueva.file,
       });
-      try {
-        localStorage.setItem(cacheKey, nueva.dataUrl);
-      } catch {
-        /* sin persistencia local */
-      }
-      setImagenLocal(nueva.dataUrl);
       cancelar();
-      setMsg({ ok: true, texto: "Firma guardada." });
+      setMsg({ ok: true, texto: "Firma guardada. Abajo ves cómo se imprimirá." });
       await cargar();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo guardar." });
@@ -109,9 +176,6 @@ export function MiFirma() {
       setGuardando(false);
     }
   }
-
-  const s = estado?.signature;
-  const tieneFirma = !!estado?.hasActiveSignature && !!s;
 
   return (
     <div className="max-w-xl space-y-4">
@@ -133,27 +197,37 @@ export function MiFirma() {
         <div className="px-5 py-5">
           {tieneFirma ? (
             <>
-              <div className="flex min-h-[110px] items-center justify-center rounded-lg border border-[var(--atm-linea)] bg-[var(--atm-fondo)] p-4">
-                {imagenLocal ? (
-                  <img src={imagenLocal} alt="Tu firma" className="max-h-24 w-auto" />
-                ) : (
-                  <p className="max-w-xs text-center text-xs text-zinc-400">
-                    La subiste desde otro equipo, así que aquí no se puede previsualizar.
-                    <br />
-                    Vuelve a subirla en este navegador para verla.
+              <p className="mb-1.5 text-xs font-medium text-zinc-500">Así se imprime en el informe</p>
+              {impresa?.estado === "lista" ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <figure className="flex min-h-[110px] flex-col items-center justify-center rounded-lg border border-[var(--atm-linea)] bg-white p-4">
+                    <img src={impresa.url} alt="Tu firma tal como se imprime" className="max-h-24 w-auto" />
+                    <figcaption className="mt-2 text-[11px] text-zinc-400">Sobre el papel del informe</figcaption>
+                  </figure>
+                  <figure className={`flex min-h-[110px] flex-col items-center justify-center rounded-lg border border-[var(--atm-linea)] p-4 ${CUADROS}`}>
+                    <img src={impresa.url} alt="" aria-hidden className="max-h-24 w-auto" />
+                    <figcaption className="mt-2 rounded bg-white/80 px-1 text-[11px] text-zinc-500">
+                      Los cuadros son la parte transparente
+                    </figcaption>
+                  </figure>
+                </div>
+              ) : (
+                <div className="flex min-h-[110px] items-center justify-center rounded-lg border border-[var(--atm-linea)] bg-[var(--atm-fondo)] p-4">
+                  <p className="max-w-xs text-center text-xs text-zinc-400" role={impresa?.estado === "error" ? "alert" : undefined}>
+                    {impresa?.estado === "error" ? impresa.texto : "Preparando la vista previa…"}
                   </p>
-                )}
-              </div>
+                </div>
+              )}
               <dl className="mt-4 grid grid-cols-2 gap-y-2 text-xs sm:grid-cols-3">
-                <Dato titulo="Formato" valor={s.mimeType === "image/png" ? "PNG" : "JPG"} />
+                <Dato titulo="Archivo original" valor={s.mimeType === "image/png" ? "PNG" : "JPG"} />
                 <Dato titulo="Tamaño" valor={`${s.width}×${s.height} px · ${(s.fileSize / 1024).toFixed(0)} KB`} />
                 <Dato titulo="Actualizada" valor={new Date(s.updatedAt).toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" })} />
               </dl>
-              {estado.totalVersions > 1 && (
-                <p className="mt-3 text-xs text-zinc-400">
-                  {estado.totalVersions} versiones guardadas. Las anteriores no se borran.
-                </p>
-              )}
+              <p className="mt-3 text-xs text-zinc-400">
+                Tu archivo original se guarda tal cual. Para el informe se usa una copia con el fondo
+                transparente y recortada a la firma; el trazo no se modifica.
+                {estado.totalVersions > 1 && ` ${estado.totalVersions} versiones guardadas; las anteriores no se borran.`}
+              </p>
             </>
           ) : (
             <div className="flex min-h-[110px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--atm-linea)] bg-[var(--atm-fondo)] p-6 text-center">
@@ -201,7 +275,7 @@ export function MiFirma() {
               <p className="text-sm font-medium text-[var(--atm-azul)]">
                 {nueva ? nueva.file.name : "Selecciona o arrastra tu firma"}
               </p>
-              <p className="text-xs text-zinc-500">PNG o JPG · máximo {MAX_KB} KB · fondo transparente o blanco</p>
+              <p className="text-xs text-zinc-500">PNG o JPG · máximo {MAX_KB} KB · fondo claro y parejo</p>
               <input
                 ref={input}
                 type="file"
@@ -213,17 +287,21 @@ export function MiFirma() {
 
             {nueva && (
               <div>
-                <p className="mb-1.5 text-xs font-medium text-zinc-500">Así se verá en el informe</p>
-                <div className="flex min-h-[100px] items-center justify-center rounded-lg border border-[var(--atm-linea)] bg-white p-4">
-                  <img src={nueva.dataUrl} alt="Vista previa" className="max-h-24 w-auto" />
+                <p className="mb-1.5 text-xs font-medium text-zinc-500">Archivo seleccionado (original)</p>
+                <div className={`flex min-h-[100px] items-center justify-center rounded-lg border border-[var(--atm-linea)] p-4 ${CUADROS}`}>
+                  <img src={nueva.dataUrl} alt="Archivo seleccionado" className="max-h-24 w-auto" />
                 </div>
+                <p className="mt-1.5 text-xs text-zinc-500">
+                  Al guardarla se prepara la versión que se imprime —fondo transparente, recortada— y la verás
+                  en «Firma vigente» antes de ratificar ningún informe.
+                </p>
               </div>
             )}
 
             {errorCarga && !msg && (
-        <p className="rounded-lg border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-[var(--atm-mal)]">{errorCarga}</p>
-      )}
-      {msg && (
+              <p className="rounded-lg border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-[var(--atm-mal)]">{errorCarga}</p>
+            )}
+            {msg && (
               <p className={`text-sm ${msg.ok ? "text-[var(--atm-ok)]" : "text-[var(--atm-mal)]"}`}>{msg.texto}</p>
             )}
 
