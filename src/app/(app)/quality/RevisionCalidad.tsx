@@ -212,6 +212,19 @@ export function RevisionCalidad() {
                         </button>
                       </div>
                     </div>
+                  ) : r.workflowStatus === "SIGNED" ? (
+                    /*
+                      UN INFORME FIRMADO NO SE DEVUELVE POR AQUÍ.
+                      Reabrirlo exige una autorización de corrección emitida por
+                      Administración: así el documento firmado se conserva y la
+                      versión nueva nace del trabajo del médico. El servidor lo
+                      rechaza igual; esto sólo evita ofrecer una acción que va a
+                      fallar.
+                    */
+                    <span className="block max-w-64 text-left text-xs text-zinc-500">
+                      Los informes firmados sólo pueden reabrirse mediante una autorización de corrección
+                      emitida por Administración.
+                    </span>
                   ) : RATIFICADO.has(r.workflowStatus) ? (
                     <button
                       onClick={() => {
