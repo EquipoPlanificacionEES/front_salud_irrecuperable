@@ -71,6 +71,13 @@ export const queryKeys = {
    * de informes y el `qc.clear()` al cambiar de ámbito lo alcanzan.
    */
   reportOrientationReview: (reportId: string) => ["reports", "orientation-review", reportId] as const,
+  /**
+   * `GET /reports/{reportId}/versions` — el historial de versiones del
+   * expediente. Bajo el mismo prefijo `"reports"` y por la misma razón: una
+   * corrección post-firma cambia el listado Y el historial, y una sola
+   * invalidación tiene que alcanzar a los dos.
+   */
+  reportVersions: (reportId: string) => ["reports", "versions", reportId] as const,
   exports: () => ["exports"] as const,
 } as const;
 

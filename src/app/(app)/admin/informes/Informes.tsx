@@ -1,8 +1,8 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { ApiFallo } from "@/lib/api";
-import { useBatches, useReports } from "@/lib/queries";
+import { api, ApiFallo } from "@/lib/api";
+import { useBatches, useInvalidarCorreccion, useReports, useVersionesInforme } from "@/lib/queries";
 import {
   ORIENTATION_LABEL,
   ORIENTATION_REASON_FILTER_LABEL,
@@ -35,6 +35,44 @@ export function Informes() {
   const [abierto, setAbierto] = useState<string | null>(null);
   /** Nº de trámite pedido desde el dashboard («Ver expediente»). Filtro de CLIENTE. */
   const [fTramite, setFTramite] = useState("");
+  /** Qué informe firmado tiene abierto el cuadro de «Habilitar corrección». */
+  const [habilitando, setHabilitando] = useState<string | null>(null);
+  const [motivo, setMotivo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [accion, setAccion] = useState<{ ok: boolean; texto: string } | null>(null);
+  /** Qué fila tiene desplegado el historial de versiones. */
+  const [historial, setHistorial] = useState<string | null>(null);
+  const invalidarCorreccion = useInvalidarCorreccion();
+
+  /**
+   * HABILITAR LA CORRECCIÓN DE UN INFORME FIRMADO.
+   *
+   * No modifica el informe ni crea ninguna versión: autoriza al médico asignado
+   * a corregirlo. El documento firmado sigue siendo el vigente hasta que el
+   * médico inicie y vuelva a firmar.
+   */
+  async function habilitarCorreccion(reportId: string) {
+    if (motivo.trim().length < 10) {
+      setAccion({ ok: false, texto: "El motivo debe tener al menos 10 caracteres." });
+      return;
+    }
+    setBusy(true);
+    setAccion(null);
+    try {
+      await api(`/reports/${reportId}/post-sign-correction`, { json: { reason: motivo.trim() } });
+      setAccion({
+        ok: true,
+        texto: "Corrección habilitada. El médico asignado verá el aviso y podrá iniciarla.",
+      });
+      setHabilitando(null);
+      setMotivo("");
+      await invalidarCorreccion(reportId);
+    } catch (e) {
+      setAccion({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo habilitar." });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Llegar desde «Ver expediente» del dashboard: `?semana=<lote>&tramite=<nº>`.
   // Se lee DESPUÉS de montar para que el servidor y el cliente pinten lo mismo.
@@ -187,6 +225,7 @@ export function Informes() {
       )}
 
       {msg && <Aviso ok={false}>{msg}</Aviso>}
+      {accion && <Aviso ok={accion.ok}>{accion.texto}</Aviso>}
 
       <Tabla columnas={COLUMNAS}>
         {visibles.length === 0 && (
@@ -232,6 +271,29 @@ export function Informes() {
                     Firmado
                   </a>
                 )}
+                <button
+                  type="button"
+                  aria-expanded={historial === r.reportId}
+                  onClick={() => setHistorial((v) => (v === r.reportId ? null : r.reportId))}
+                  className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                >
+                  Historial
+                </button>
+                {/* Corregir un informe FIRMADO exige habilitarlo antes: el
+                    médico no puede reabrirlo por su cuenta. */}
+                {r.signedAt && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHabilitando((v) => (v === r.reportId ? null : r.reportId));
+                      setMotivo("");
+                      setAccion(null);
+                    }}
+                    className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs font-medium text-[var(--atm-obs)] hover:bg-amber-50"
+                  >
+                    Habilitar corrección
+                  </button>
+                )}
               </td>
             </tr>
             {abierto === r.reportId && (
@@ -241,9 +303,137 @@ export function Informes() {
                 </td>
               </tr>
             )}
+            {habilitando === r.reportId && (
+              <tr className="border-t border-[var(--atm-linea)] bg-amber-50/40">
+                <td colSpan={COLUMNAS.length} className="px-4 py-3">
+                  <div className="max-w-2xl space-y-2">
+                    <p className="text-sm font-medium text-zinc-800">
+                      Corregir informe firmado · trámite {r.externalCaseId} · versión {r.version}
+                    </p>
+                    <p className="text-xs text-zinc-600">
+                      Médico: {r.doctor?.fullName ?? "sin asignación vigente"}
+                    </p>
+                    <label className="block text-xs text-zinc-600" htmlFor={`motivo-${r.reportId}`}>
+                      Motivo de corrección
+                    </label>
+                    <textarea
+                      id={`motivo-${r.reportId}`}
+                      rows={3}
+                      value={motivo}
+                      onChange={(e) => setMotivo(e.target.value)}
+                      placeholder="Motivo de la corrección (mín. 10 caracteres)"
+                      className="w-full rounded-lg border border-[var(--atm-linea)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--atm-azul2)]"
+                    />
+                    <p className="text-xs text-zinc-600">
+                      El informe firmado actual no será modificado ni eliminado. Si el médico inicia la
+                      corrección, se generará una nueva versión. La versión anterior permanecerá disponible
+                      en el historial.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHabilitando(null);
+                          setMotivo("");
+                        }}
+                        className="rounded-lg border border-[var(--atm-linea)] px-3 py-1 text-xs text-zinc-600"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => habilitarCorreccion(r.reportId)}
+                        disabled={busy || motivo.trim().length < 10}
+                        className="rounded-lg bg-[var(--atm-azul)] px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+                      >
+                        {busy ? "Habilitando…" : "Habilitar corrección"}
+                      </button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {historial === r.reportId && (
+              <tr className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
+                <td colSpan={COLUMNAS.length} className="px-4 py-3">
+                  <HistorialVersiones reportId={r.reportId} />
+                </td>
+              </tr>
+            )}
           </Fragment>
         ))}
       </Tabla>
     </div>
+  );
+}
+
+/**
+ * EL HISTORIAL DE VERSIONES DEL EXPEDIENTE.
+ *
+ * Una versión firmada que fue reemplazada NO desaparece: sigue aquí, con sus
+ * documentos descargables. Es lo que permite explicar, meses después, por qué
+ * hay dos informes firmados del mismo trámite y cuál vale.
+ */
+function HistorialVersiones({ reportId }: { reportId: string }) {
+  const { data, isPending, error } = useVersionesInforme(reportId, true);
+  if (isPending) return <p className="text-xs text-zinc-500">Cargando historial…</p>;
+  if (error || !data) return <p className="text-xs text-[var(--atm-mal)]">No se pudo cargar el historial.</p>;
+
+  return (
+    <table className="w-full text-xs">
+      <thead className="text-zinc-500">
+        <tr>
+          <th className="py-1 text-left font-medium">Versión</th>
+          <th className="py-1 text-left font-medium">Estado</th>
+          <th className="py-1 text-left font-medium">Pronunciamiento</th>
+          <th className="py-1 text-left font-medium">Ratificada</th>
+          <th className="py-1 text-left font-medium">Firmada</th>
+          <th className="py-1 text-left font-medium">Médico</th>
+          <th className="py-1 text-left font-medium">Motivo de corrección</th>
+          <th className="py-1 text-right font-medium">Documentos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.versions.map((v) => (
+          <tr key={v.reportSnapshotId} className="border-t border-[var(--atm-linea)]">
+            <td className="py-1.5 text-zinc-700">v{v.version}</td>
+            <td className="py-1.5">
+              <Chip tono={v.current ? "ok" : "neutral"}>{v.current ? "Vigente" : "Reemplazada"}</Chip>
+            </td>
+            <td className="py-1.5 text-zinc-600">{v.determination ?? "—"}</td>
+            <td className="py-1.5 text-zinc-600">{v.approvedAt?.slice(0, 10) ?? "—"}</td>
+            <td className="py-1.5 text-zinc-600">{v.signedAt?.slice(0, 10) ?? "—"}</td>
+            <td className="py-1.5 text-zinc-600">{v.doctorName ?? "—"}</td>
+            <td className="max-w-64 truncate py-1.5 text-zinc-600" title={v.correctionReason ?? undefined}>
+              {v.correctionReason ?? "—"}
+            </td>
+            <td className="py-1.5 text-right whitespace-nowrap">
+              {/* La URL la compone el backend: la pantalla no arma rutas de descarga. */}
+              {v.finalArtifact && (
+                <a
+                  href={v.finalArtifact.downloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-[var(--atm-linea)] px-2 py-0.5 text-[var(--atm-azul)] hover:bg-blue-50"
+                >
+                  Word
+                </a>
+              )}
+              {v.finalPdfArtifact && (
+                <a
+                  href={v.finalPdfArtifact.downloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2 py-0.5 text-[var(--atm-azul)] hover:bg-blue-50"
+                >
+                  PDF
+                </a>
+              )}
+              {!v.finalArtifact && !v.finalPdfArtifact && <span className="text-zinc-400">—</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

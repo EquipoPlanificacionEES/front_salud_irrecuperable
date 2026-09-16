@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCaseReport, useCita, useDoctorInbox, useInvalidar, usePeritaje } from "@/lib/queries";
+import {
+  useCaseReport,
+  useCita,
+  useDoctorInbox,
+  useIniciarCorreccion,
+  useInvalidar,
+  usePeritaje,
+} from "@/lib/queries";
 import { queryKeys } from "@/lib/query-keys";
 import { FichaSkeleton, Refrescando } from "@/components/Skeleton";
 import {
@@ -149,8 +156,23 @@ interface Report {
     requiresTelematicAssessment?: boolean;
     /** El documento final está emitido y esta sesión puede descargarlo. */
     canDownloadSigned: boolean;
+    /**
+     * Administración habilitó corregir ESTE informe firmado, y para este
+     * profesional. Sin eso no hay botón — y la API lo rechaza igual.
+     */
+    canStartPostSignCorrection?: boolean;
   };
   licenses: LicenciaBackend[];
+  /**
+   * LA CORRECCIÓN DE UN INFORME FIRMADO, cuando administración la habilitó.
+   * `null` en todo lo demás, que es lo normal.
+   */
+  postSignCorrection?: {
+    status: "OPEN" | "STARTED" | "COMPLETED" | "CANCELLED";
+    reason: string;
+    authorizedAt: string;
+    newReportSnapshotId: string | null;
+  } | null;
 }
 
 type Evaluacion = "RECOVERABLE" | "IRRECOVERABLE";
@@ -282,6 +304,13 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const rep = informe.data ?? null;
   const invalidar = useInvalidar();
   const qc = useQueryClient();
+  /**
+   * Abrir la corrección de un informe FIRMADO. El identificador puede no estar
+   * todavía —la ficha se está cargando—, y el botón que la dispara sólo existe
+   * cuando la autorización llegó: el hook se declara igual, siempre, porque no
+   * puede depender de una condición.
+   */
+  const iniciarCorreccion = useIniciarCorreccion(rep?.id ?? "", caseId);
 
   /**
    * UN EXPEDIENTE PUEDE NO TENER INFORME Y AUN ASÍ SER SUYO.
@@ -713,6 +742,51 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
         warnings={rep.identityWarnings}
         firmado={rep.workflowStatus === "SIGNED" || rep.workflowStatus === "SIGNING"}
       />
+
+      {/*
+        CORRECCIÓN DE UN INFORME FIRMADO.
+
+        El informe firmado sigue siendo el vigente: esto no lo cambia. Sólo dice
+        que administración autorizó corregirlo y ofrece abrir la versión nueva.
+      */}
+      {rep.postSignCorrection?.status === "OPEN" && (
+        <div className={`space-y-2 rounded-lg border px-4 py-3 text-sm ${TONO.obs}`}>
+          <p className="font-medium">Corrección autorizada por Administración</p>
+          <p>Motivo: {rep.postSignCorrection.reason}</p>
+          <p className="text-xs">
+            El informe firmado actual no se modifica. Al iniciar la corrección se abre una versión nueva
+            y la anterior queda en el historial.
+          </p>
+          {rep.capabilities.canStartPostSignCorrection && (
+            <button
+              type="button"
+              disabled={iniciarCorreccion.isPending}
+              onClick={async () => {
+                setMsg(null);
+                try {
+                  const r = await iniciarCorreccion.mutateAsync();
+                  setMsg({ ok: true, texto: `Corrección iniciada: se abrió la versión ${r.newVersion}.` });
+                  await cargar();
+                } catch (e) {
+                  setMsg({
+                    ok: false,
+                    texto: e instanceof ApiFallo ? e.message : "No se pudo iniciar la corrección.",
+                  });
+                }
+              }}
+              className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              {iniciarCorreccion.isPending ? "Abriendo…" : "Iniciar corrección"}
+            </button>
+          )}
+        </div>
+      )}
+      {rep.postSignCorrection?.status === "STARTED" && rep.workflowStatus === "SIGNED" && (
+        <p className={`rounded-lg border px-4 py-2.5 text-sm ${TONO.info}`}>
+          Corrección en curso: hay una versión nueva abierta para este expediente. Este documento firmado
+          sigue siendo el vigente hasta que la nueva se firme.
+        </p>
+      )}
 
       {/* Avisos de estado / bloqueos / advertencias */}
       {estado.aviso && !editando && (

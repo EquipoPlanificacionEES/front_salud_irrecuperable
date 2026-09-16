@@ -274,6 +274,91 @@ async function pintar(
 const PUEDE_ACTUAR = { canRequestChanges: true, canApprove: false };
 
 /**
+ * CORREGIR UN INFORME YA FIRMADO — la mitad del médico.
+ *
+ * Un informe firmado no se reabre solo: hace falta que administración lo
+ * habilite. Estas pruebas congelan las dos caras de esa regla —sin autorización
+ * no hay nada que pulsar; con ella, el aviso dice quién la dio y por qué— y que
+ * iniciar llame a la ruta que abre la versión nueva.
+ */
+describe("PantallaResultado · corrección de un informe firmado", () => {
+  const MOTIVO = "Ratificación realizada por error; se reabre para corregirlo.";
+
+  function firmado(extra: Record<string, unknown> = {}) {
+    const base = informe({ canRequestChanges: false, canApprove: false });
+    return {
+      ...base,
+      workflowStatus: "SIGNED",
+      finalArtifact: { downloadUrl: "/api/v1/reports/x/signed-document" },
+      capabilities: { ...base.capabilities, canDownloadSigned: true },
+      ...extra,
+    };
+  }
+
+  it("I · firmado y SIN autorización: no hay aviso ni botón para reabrirlo", async () => {
+    vi.stubGlobal("fetch", fetchDevolviendo(firmado()));
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    expect(screen.queryByText(/Corrección autorizada por Administración/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Iniciar corrección/ })).toBeNull();
+  });
+
+  it("J, K y L · con autorización abierta se ve el aviso, el motivo y el botón", async () => {
+    const base = informe({ canRequestChanges: false, canApprove: false });
+    vi.stubGlobal(
+      "fetch",
+      fetchDevolviendo(
+        firmado({
+          capabilities: { ...base.capabilities, canDownloadSigned: true, canStartPostSignCorrection: true },
+          postSignCorrection: {
+            status: "OPEN",
+            reason: MOTIVO,
+            authorizedAt: "2026-09-17T12:00:00.000Z",
+            newReportSnapshotId: null,
+          },
+        }),
+      ),
+    );
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    expect(screen.getByText("Corrección autorizada por Administración")).toBeDefined();
+    expect(screen.getByText(new RegExp(MOTIVO.slice(0, 30)))).toBeDefined();
+    // Y dice lo que NO va a pasar con el documento que ya está firmado.
+    expect(screen.getByText(/El informe firmado actual no se modifica/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Iniciar corrección" })).toBeDefined();
+  });
+
+  it("M · iniciar la corrección llama a la ruta que abre la versión nueva", async () => {
+    const base = informe({ canRequestChanges: false, canApprove: false });
+    const cuerpo = firmado({
+      capabilities: { ...base.capabilities, canDownloadSigned: true, canStartPostSignCorrection: true },
+      postSignCorrection: {
+        status: "OPEN",
+        reason: MOTIVO,
+        authorizedAt: "2026-09-17T12:00:00.000Z",
+        newReportSnapshotId: null,
+      },
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/post-sign-correction/start")) {
+        return json({ status: "STARTED", newReportSnapshotId: "00000000-0000-4000-8000-0000000000b9", newVersion: 2 });
+      }
+      return json(u.includes("/manual-form") ? FORMULARIO : cuerpo);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar corrección" }));
+    await waitFor(() => expect(llamadaA(fetchMock, "/post-sign-correction/start")).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/se abrió la versión 2/)).toBeDefined());
+  });
+});
+
+/**
  * Abre el editor y ESPERA. El formulario lo describe el backend, así que
  * abrirlo es una llamada: sin esperarla, la prueba mira una pantalla que
  * todavía no existe.

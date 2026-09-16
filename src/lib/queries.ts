@@ -388,6 +388,97 @@ export function useInvalidar() {
 }
 
 // ---------------------------------------------------------------------------
+// Corrección de un informe YA FIRMADO
+// ---------------------------------------------------------------------------
+
+/**
+ * LA AUTORIZACIÓN PARA CORREGIR UN INFORME FIRMADO.
+ *
+ * Administración habilita, el médico corrige. La pantalla no decide nada de
+ * esto: lee el estado que viaja en la ficha del informe y llama a la ruta que
+ * corresponde, que vuelve a comprobarlo todo en el servidor.
+ */
+export interface CorreccionPostFirma {
+  signedReportSnapshotId: string;
+  caseId: string;
+  status: "OPEN" | "STARTED" | "COMPLETED" | "CANCELLED";
+  doctorProfileId: string;
+  reason: string;
+  authorizedAt: string;
+  startedAt: string | null;
+  /** La versión que nació al iniciarla. Null mientras nadie la inicie. */
+  newReportSnapshotId: string | null;
+}
+
+/** Una versión del informe en el historial del expediente. */
+export interface VersionInforme {
+  reportSnapshotId: string;
+  version: number;
+  /** La última versión FIRMADA: la que vale hoy. */
+  current: boolean;
+  workflowStatus: string;
+  createdAt: string;
+  supersededAt: string | null;
+  approvedAt: string | null;
+  signedAt: string | null;
+  doctorName: string | null;
+  determination: string | null;
+  /** Por qué nació esta versión, si nació de una corrección post-firma. */
+  correctionReason: string | null;
+  finalArtifact: { downloadUrl: string } | null;
+  finalPdfArtifact: { downloadUrl: string } | null;
+}
+
+/** Una corrección post-firma cambia el listado, el historial y la bandeja. */
+function invalidarCorreccionEn(qc: QueryClient, reportId: string) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: ["reports"] }),
+    qc.invalidateQueries({ queryKey: queryKeys.reportVersions(reportId) }),
+    qc.invalidateQueries({ queryKey: queryKeys.cases.todo() }),
+    qc.invalidateQueries({ queryKey: queryKeys.doctor.inbox() }),
+  ]);
+}
+
+/**
+ * Para administración, que actúa SOBRE UNA FILA del listado: el identificador
+ * del informe no se conoce al montar, así que la invalidación se pide con él.
+ */
+export function useInvalidarCorreccion() {
+  const qc = useQueryClient();
+  return (reportId: string) => invalidarCorreccionEn(qc, reportId);
+}
+
+/** `GET /reports/{id}/versions` — el historial, sólo cuando se abre. */
+export function useVersionesInforme(reportId: string, habilitado: boolean) {
+  return useQuery({
+    queryKey: queryKeys.reportVersions(reportId),
+    queryFn: () => api<{ caseId: string; versions: VersionInforme[] }>(`/reports/${reportId}/versions`),
+    enabled: habilitado,
+    staleTime: STALE.reports,
+  });
+}
+
+/**
+ * EL MÉDICO INICIA, y aquí nace la versión nueva. La anterior sigue firmada e
+ * intacta: por eso se invalida la ficha del caso en vez de reemplazar nada a
+ * mano.
+ */
+export function useIniciarCorreccion(reportId: string, caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<CorreccionPostFirma & { newReportSnapshotId: string; newVersion: number }>(
+        `/reports/${reportId}/post-sign-correction/start`,
+        { method: "POST" },
+      ),
+    onSuccess: async () => {
+      await invalidarCorreccionEn(qc, reportId);
+      await qc.invalidateQueries({ queryKey: queryKeys.cases.report(caseId) });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Peritaje telemático y cita
 // ---------------------------------------------------------------------------
 

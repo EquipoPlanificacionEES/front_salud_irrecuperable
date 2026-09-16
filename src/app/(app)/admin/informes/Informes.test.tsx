@@ -71,6 +71,120 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * CORREGIR UN INFORME YA FIRMADO — la mitad administrativa.
+ *
+ * Lo que se congela aquí: que la acción sólo exista sobre un informe FIRMADO,
+ * que el motivo sea obligatorio, que confirmar llame a la ruta de autorización
+ * de ESA versión, y que el historial siga mostrando la versión reemplazada con
+ * su documento. Nada de esto crea una versión: eso lo hace el médico.
+ */
+describe("Informes · corrección de un informe firmado", () => {
+  const FIRMADO: ReportListItem = {
+    ...INDETERMINADA,
+    reportId: "00000000-0000-4000-8000-0000000000a9",
+    caseId: "00000000-0000-4000-8000-0000000000c9",
+    externalCaseId: "33315064",
+    workflowStatus: "SIGNED",
+    signedAt: "2026-09-16T14:16:11.000Z",
+  };
+
+  const VERSIONES = {
+    caseId: FIRMADO.caseId,
+    versions: [
+      {
+        reportSnapshotId: FIRMADO.reportId,
+        version: 1,
+        current: false,
+        workflowStatus: "SIGNED",
+        createdAt: "2026-09-16T14:10:00.000Z",
+        supersededAt: "2026-09-17T10:00:00.000Z",
+        approvedAt: "2026-09-16T14:16:00.000Z",
+        signedAt: "2026-09-16T14:16:11.000Z",
+        doctorName: "Médica de Prueba",
+        determination: "RECOVERABLE",
+        correctionReason: null,
+        finalArtifact: { downloadUrl: `/api/v1/reports/${FIRMADO.reportId}/signed-document` },
+        finalPdfArtifact: null,
+      },
+      {
+        reportSnapshotId: "00000000-0000-4000-8000-0000000000b9",
+        version: 2,
+        current: true,
+        workflowStatus: "SIGNED",
+        createdAt: "2026-09-17T09:00:00.000Z",
+        supersededAt: null,
+        approvedAt: "2026-09-17T09:50:00.000Z",
+        signedAt: "2026-09-17T10:00:00.000Z",
+        doctorName: "Médica de Prueba",
+        determination: "IRRECOVERABLE",
+        correctionReason: "Ratificación realizada por error; se reabre para corregirlo.",
+        finalArtifact: { downloadUrl: "/api/v1/reports/00000000-0000-4000-8000-0000000000b9/signed-document" },
+        finalPdfArtifact: null,
+      },
+    ],
+  };
+
+  function backendFirmado() {
+    return vi.fn(async (...args: unknown[]) => {
+      const u = String(args[0]);
+      const respuesta = (b: unknown) =>
+        new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
+      if (u.includes("/post-sign-correction")) return respuesta({ status: "OPEN", reason: "x" });
+      if (u.includes("/versions")) return respuesta(VERSIONES);
+      if (u.includes("/reports?")) return respuesta({ reports: [FIRMADO], total: 1, countsByWorkflowStatus: {} });
+      return respuesta({ batches: [] });
+    });
+  }
+
+  it("pide un motivo y, al confirmarlo, habilita la corrección de ESA versión firmada", async () => {
+    const fetchMock = backendFirmado();
+    vi.stubGlobal("fetch", fetchMock);
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("33315064")).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Habilitar corrección" }));
+    expect(screen.getByText(/Corregir informe firmado/)).toBeDefined();
+    // El aviso dice lo que NO va a pasar, que es lo que preocupa a quien autoriza.
+    expect(screen.getByText(/no será modificado ni eliminado/i)).toBeDefined();
+
+    const confirmar = screen.getAllByRole("button", { name: "Habilitar corrección" }).at(-1) as HTMLButtonElement;
+    expect(confirmar.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Motivo de corrección"), {
+      target: { value: "Ratificación realizada por error; se reabre para corregirlo." },
+    });
+    expect(confirmar.disabled).toBe(false);
+    fireEvent.click(confirmar);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((c) =>
+          String(c[0]).includes(`/reports/${FIRMADO.reportId}/post-sign-correction`),
+        ),
+      ).toBe(true),
+    );
+    const llamada = fetchMock.mock.calls.find((c) => String(c[0]).includes("/post-sign-correction"));
+    const cuerpo = JSON.parse(String((llamada?.[1] as RequestInit).body)) as { reason: string };
+    expect(cuerpo.reason).toContain("Ratificación realizada por error");
+  });
+
+  it("el historial muestra la versión reemplazada junto a la vigente, con su documento", async () => {
+    vi.stubGlobal("fetch", backendFirmado());
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("33315064")).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Historial" }));
+    await waitFor(() => expect(screen.getByText("Vigente")).toBeDefined());
+    expect(screen.getByText("Reemplazada")).toBeDefined();
+    expect(screen.getByText(/Ratificación realizada por error/)).toBeDefined();
+    // La versión anterior conserva su documento descargable: la historia no se borra.
+    const enlaces = screen.getAllByRole("link", { name: "Word" });
+    expect(enlaces).toHaveLength(2);
+    expect((enlaces[0] as HTMLAnchorElement).getAttribute("href")).toContain(FIRMADO.reportId);
+  });
+});
+
 describe("Informes · orientación IA", () => {
   it("muestra el motivo corto, la revisión médica y abre el fundamento a demanda", async () => {
     const fetchMock = backend([INDETERMINADA, RECUPERABLE]);
