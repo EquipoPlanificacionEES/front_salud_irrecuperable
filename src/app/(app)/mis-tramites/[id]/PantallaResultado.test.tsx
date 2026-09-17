@@ -1491,3 +1491,78 @@ describe("PantallaResultado · advertencia de identidad antes de firmar", () => 
     expect(screen.queryByText(/fuente oficial/)).toBeNull();
   });
 });
+
+/**
+ * EL INFORME FIRMADO EN WORD Y EN PDF, desde la ficha del médico.
+ *
+ * Lo que se congela: los dos botones cuando los dos documentos están; el PDF en
+ * su estado real; y que durante una corrección abierta —esta versión todavía
+ * sin documento— lo que se descarga sea la última versión firmada, diciendo
+ * cuál es.
+ */
+describe("PantallaResultado · informe firmado en Word y PDF", () => {
+  const PROPIA = "00000000-0000-4000-8000-000000000001";
+  const ANTERIOR = "00000000-0000-4000-8000-0000000000f1";
+
+  function docs(reportSnapshotId: string, version: number, pdf: string) {
+    const base = `/api/v1/reports/${reportSnapshotId}/signed-document`;
+    return {
+      reportSnapshotId,
+      version,
+      docx: { status: "READY", downloadUrl: `${base}?format=docx` },
+      pdf: { status: pdf, downloadUrl: pdf === "READY" ? `${base}?format=pdf` : null },
+    };
+  }
+
+  async function pintarCon(extra: Record<string, unknown>, canDownloadSigned: boolean) {
+    const base = informe({ canRequestChanges: false, canApprove: false, canDownloadSigned });
+    vi.stubGlobal("fetch", fetchDevolviendo({ ...base, workflowStatus: "SIGNED", ...extra }));
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+  }
+
+  it("A · firmado con los dos listos: «Descargar Word» y «Descargar PDF» de esta versión", async () => {
+    await pintarCon({ currentSignedDocuments: docs(PROPIA, 1, "READY") }, true);
+    const word = screen.getByRole("link", { name: "Descargar Word" }) as HTMLAnchorElement;
+    const pdf = screen.getByRole("link", { name: "Descargar PDF" }) as HTMLAnchorElement;
+    expect(word.getAttribute("href")).toBe(`/api/v1/reports/${PROPIA}/signed-document?format=docx`);
+    expect(pdf.getAttribute("href")).toBe(`/api/v1/reports/${PROPIA}/signed-document?format=pdf`);
+    // Ninguno de los dos es el borrador.
+    expect(screen.queryAllByRole("link").some((a) => a.getAttribute("href")?.endsWith("/download"))).toBe(false);
+  });
+
+  it("B · PDF fallido: Word sí, y «PDF no disponible» sin enlace", async () => {
+    await pintarCon({ currentSignedDocuments: docs(PROPIA, 1, "FAILED") }, true);
+    expect(screen.getByRole("link", { name: "Descargar Word" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Descargar PDF" })).toBeNull();
+    expect(screen.getByText("PDF no disponible")).toBeDefined();
+  });
+
+  it("C · PDF en proceso: Word sí, y «PDF en proceso»", async () => {
+    await pintarCon({ currentSignedDocuments: docs(PROPIA, 1, "PROCESSING") }, true);
+    expect(screen.getByRole("link", { name: "Descargar Word" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Descargar PDF" })).toBeNull();
+    expect(screen.getByText("PDF en proceso")).toBeDefined();
+  });
+
+  it("F · corrección abierta: esta versión sin documento, se descarga la última firmada y se dice cuál", async () => {
+    await pintarCon(
+      { workflowStatus: "READY_FOR_REVIEW", finalArtifact: null, currentSignedDocuments: docs(ANTERIOR, 1, "READY") },
+      false,
+    );
+    expect(screen.getByRole("link", { name: "Descargar Word" }).getAttribute("href")).toContain(ANTERIOR);
+    expect(screen.getByRole("link", { name: "Descargar PDF" }).getAttribute("href")).toContain(ANTERIOR);
+    expect(screen.getByText(/Informe firmado vigente · versión 1/)).toBeDefined();
+  });
+
+  it("los documentos de esta misma versión siguen pidiendo la capacidad del backend", async () => {
+    await pintarCon({ currentSignedDocuments: docs(PROPIA, 1, "READY") }, false);
+    expect(screen.queryByRole("link", { name: "Descargar Word" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Descargar PDF" })).toBeNull();
+  });
+
+  it("nunca firmado: no hay descargas finales", async () => {
+    await pintarCon({ workflowStatus: "READY_FOR_REVIEW", currentSignedDocuments: null }, false);
+    expect(screen.queryByRole("link", { name: /Descargar (Word|PDF)/ })).toBeNull();
+  });
+});

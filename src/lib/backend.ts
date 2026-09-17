@@ -311,6 +311,25 @@ export interface OperationalCase {
     | null;
 }
 
+/**
+ * ESTADO REAL DE UN DOCUMENTO FIRMADO, tal como lo resuelve el backend.
+ * `PROCESSING`: el PDF está encolado o produciéndose. `FAILED`: su producción
+ * falló. `NOT_AVAILABLE`: no existe ni está en camino.
+ */
+export type EstadoDocumentoFirmado = "READY" | "PROCESSING" | "FAILED" | "NOT_AVAILABLE";
+
+/**
+ * EL WORD Y EL PDF DE UNA VERSIÓN FIRMADA, atados a ESA versión. Las rutas las
+ * compone el servidor y sólo llegan cuando se puede descargar: la pantalla
+ * nunca ofrece un enlace que respondería 404.
+ */
+export interface DocumentosFirmados {
+  reportSnapshotId: string;
+  version: number;
+  docx: { status: "READY"; downloadUrl: string };
+  pdf: { status: EstadoDocumentoFirmado; downloadUrl: string | null };
+}
+
 export interface ReportListItem {
   reportId: string;
   caseId: string;
@@ -325,6 +344,12 @@ export interface ReportListItem {
   signedAt: string | null;
   /** Motivo corto de la orientación. Sólo ADMIN/CALIDAD. */
   orientationReason: OrientationReason | null;
+  /**
+   * Los documentos de la ÚLTIMA VERSIÓN FIRMADA del expediente —que durante
+   * una corrección no es la de esta fila—. Opcional: una API anterior no lo
+   * manda, y entonces se ofrece el enlace de siempre.
+   */
+  signedDocuments?: DocumentosFirmados | null;
 }
 
 /**

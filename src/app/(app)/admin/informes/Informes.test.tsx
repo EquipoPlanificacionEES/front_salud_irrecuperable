@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { pintarConQuery } from "@/test/utils";
 import { Informes } from "./Informes";
-import type { OrientationReview, ReportListItem } from "@/lib/backend";
+import type {
+  DocumentosFirmados,
+  EstadoDocumentoFirmado,
+  OrientationReview,
+  ReportListItem,
+} from "@/lib/backend";
 
 /**
  * INFORMES (ADMIN) · el motivo corto de la orientación y su fundamento.
@@ -79,6 +84,19 @@ afterEach(() => {
  * de ESA versión, y que el historial siga mostrando la versión reemplazada con
  * su documento. Nada de esto crea una versión: eso lo hace el médico.
  */
+function documentos(reportSnapshotId: string, version: number, pdf: EstadoDocumentoFirmado): DocumentosFirmados {
+  const base = `/api/v1/reports/${reportSnapshotId}/signed-document`;
+  return {
+    reportSnapshotId,
+    version,
+    docx: { status: "READY", downloadUrl: `${base}?format=docx` },
+    pdf: { status: pdf, downloadUrl: pdf === "READY" ? `${base}?format=pdf` : null },
+  };
+}
+
+const V2 = "00000000-0000-4000-8000-0000000000b9";
+const V3 = "00000000-0000-4000-8000-0000000000ba";
+
 describe("Informes · corrección de un informe firmado", () => {
   const FIRMADO: ReportListItem = {
     ...INDETERMINADA,
@@ -106,6 +124,7 @@ describe("Informes · corrección de un informe firmado", () => {
         correctionReason: null,
         finalArtifact: { downloadUrl: `/api/v1/reports/${FIRMADO.reportId}/signed-document` },
         finalPdfArtifact: null,
+        signedDocuments: documentos(FIRMADO.reportId, 1, "READY"),
       },
       {
         reportSnapshotId: "00000000-0000-4000-8000-0000000000b9",
@@ -121,6 +140,24 @@ describe("Informes · corrección de un informe firmado", () => {
         correctionReason: "Ratificación realizada por error; se reabre para corregirlo.",
         finalArtifact: { downloadUrl: "/api/v1/reports/00000000-0000-4000-8000-0000000000b9/signed-document" },
         finalPdfArtifact: null,
+        signedDocuments: documentos(V2, 2, "FAILED"),
+      },
+      {
+        // Una corrección más, abierta y sin firmar: no tiene documentos finales.
+        reportSnapshotId: V3,
+        version: 3,
+        current: false,
+        workflowStatus: "READY_FOR_REVIEW",
+        createdAt: "2026-09-17T11:00:00.000Z",
+        supersededAt: null,
+        approvedAt: null,
+        signedAt: null,
+        doctorName: null,
+        determination: null,
+        correctionReason: "Segunda revisión.",
+        finalArtifact: null,
+        finalPdfArtifact: null,
+        signedDocuments: null,
       },
     ],
   };
@@ -177,11 +214,99 @@ describe("Informes · corrección de un informe firmado", () => {
     fireEvent.click(screen.getByRole("button", { name: "Historial" }));
     await waitFor(() => expect(screen.getByText("Vigente")).toBeDefined());
     expect(screen.getByText("Reemplazada")).toBeDefined();
+    expect(screen.getByText("Sin firmar")).toBeDefined();
     expect(screen.getByText(/Ratificación realizada por error/)).toBeDefined();
-    // La versión anterior conserva su documento descargable: la historia no se borra.
-    const enlaces = screen.getAllByRole("link", { name: "Word" });
-    expect(enlaces).toHaveLength(2);
-    expect((enlaces[0] as HTMLAnchorElement).getAttribute("href")).toContain(FIRMADO.reportId);
+    // D · la versión reemplazada conserva SUS documentos: la historia no se borra.
+    expect(screen.getByRole("link", { name: "Descargar Word de la versión 1" }).getAttribute("href")).toBe(
+      `/api/v1/reports/${FIRMADO.reportId}/signed-document?format=docx`,
+    );
+    expect(screen.getByRole("link", { name: "Descargar PDF de la versión 1" }).getAttribute("href")).toBe(
+      `/api/v1/reports/${FIRMADO.reportId}/signed-document?format=pdf`,
+    );
+    // E · la vigente, los suyos; su PDF falló y se dice, sin enlace.
+    expect(screen.getByRole("link", { name: "Descargar Word de la versión 2" }).getAttribute("href")).toContain(V2);
+    expect(screen.queryByRole("link", { name: "Descargar PDF de la versión 2" })).toBeNull();
+    expect(screen.getByText("PDF no disponible")).toBeDefined();
+    // Una versión sin firmar no ofrece descargas finales inexistentes.
+    expect(screen.queryByRole("link", { name: /versión 3/ })).toBeNull();
+  });
+});
+
+/**
+ * DESCARGAS EN EL LISTADO. La fila ofrece el Word y el PDF de la ÚLTIMA
+ * VERSIÓN FIRMADA del expediente, con la ruta que trae el servidor — que durante
+ * una corrección no es la de la fila.
+ */
+describe("Informes · descarga del informe firmado en Word y PDF", () => {
+  const BASE: ReportListItem = {
+    ...INDETERMINADA,
+    reportId: "00000000-0000-4000-8000-0000000000e1",
+    caseId: "00000000-0000-4000-8000-0000000000e2",
+    externalCaseId: "33961795",
+    workflowStatus: "SIGNED",
+    signedAt: "2026-09-10T12:00:00.000Z",
+  };
+
+  it("A · Word y PDF listos: los dos botones", async () => {
+    const fila = { ...BASE, signedDocuments: documentos(BASE.reportId, 1, "READY") };
+    vi.stubGlobal("fetch", backend([fila]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("33961795")).toBeDefined());
+
+    expect(screen.getByRole("link", { name: "Descargar Word" }).getAttribute("href")).toBe(
+      `/api/v1/reports/${BASE.reportId}/signed-document?format=docx`,
+    );
+    expect(screen.getByRole("link", { name: "Descargar PDF" }).getAttribute("href")).toBe(
+      `/api/v1/reports/${BASE.reportId}/signed-document?format=pdf`,
+    );
+  });
+
+  it("B · Word listo y PDF fallido: Word sí; PDF no disponible", async () => {
+    const fila = { ...BASE, signedDocuments: documentos(BASE.reportId, 1, "FAILED") };
+    vi.stubGlobal("fetch", backend([fila]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("33961795")).toBeDefined());
+
+    expect(screen.getByRole("link", { name: "Descargar Word" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Descargar PDF" })).toBeNull();
+    expect(screen.getByText("PDF no disponible")).toBeDefined();
+  });
+
+  it("C · PDF en proceso: Word sí; PDF en proceso", async () => {
+    const fila = { ...BASE, signedDocuments: documentos(BASE.reportId, 1, "PROCESSING") };
+    vi.stubGlobal("fetch", backend([fila]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("33961795")).toBeDefined());
+
+    expect(screen.getByRole("link", { name: "Descargar Word" })).toBeDefined();
+    expect(screen.getByText("PDF en proceso")).toBeDefined();
+  });
+
+  it("F · con una corrección abierta, la fila es la versión nueva y descarga la firmada anterior", async () => {
+    const anterior = "00000000-0000-4000-8000-0000000000e9";
+    const fila = {
+      ...BASE,
+      version: 2,
+      workflowStatus: "READY_FOR_REVIEW" as const,
+      signedDocuments: documentos(anterior, 1, "READY"),
+    };
+    vi.stubGlobal("fetch", backend([fila]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("33961795")).toBeDefined());
+
+    for (const nombre of ["Descargar Word", "Descargar PDF"]) {
+      const href = screen.getByRole("link", { name: nombre }).getAttribute("href") ?? "";
+      expect(href).toContain(anterior);
+      expect(href).not.toContain(BASE.reportId);
+    }
+  });
+
+  it("nunca firmado: sin descargas finales", async () => {
+    vi.stubGlobal("fetch", backend([{ ...INDETERMINADA, signedDocuments: null }]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
+    expect(screen.queryByRole("link", { name: /Descargar (Word|PDF)/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Firmado" })).toBeNull();
   });
 });
 

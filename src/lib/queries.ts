@@ -10,6 +10,7 @@ import type {
   Peritaje,
   AssignmentContext,
   BatchListItem,
+  DocumentosFirmados,
   DoctorWorkload,
   ExportJob,
   HeldCase,
@@ -427,6 +428,8 @@ export interface VersionInforme {
   correctionReason: string | null;
   finalArtifact: { downloadUrl: string } | null;
   finalPdfArtifact: { downloadUrl: string } | null;
+  /** Los documentos de ESTA versión, o null si no llegó a firmarse. Opcional: API anterior. */
+  signedDocuments?: DocumentosFirmados | null;
 }
 
 /** Una corrección post-firma cambia el listado, el historial y la bandeja. */

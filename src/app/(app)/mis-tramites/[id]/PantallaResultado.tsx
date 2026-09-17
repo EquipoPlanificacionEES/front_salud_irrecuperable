@@ -28,12 +28,14 @@ import { PanelCita } from "./PanelCita";
 import { api, ApiFallo } from "@/lib/api";
 import {
   type DocumentoInforme,
+  type DocumentosFirmados,
   type IdentityWarning,
   type ManualForm,
   type OperationalCase,
   type ReportWorkflowStatus,
 } from "@/lib/backend";
 import { AdvertenciaIdentidad } from "@/components/AdvertenciaIdentidad";
+import { DescargasFirmadas } from "@/components/DescargasFirmadas";
 import {
   censarLicencias,
   diasLicencia,
@@ -135,6 +137,12 @@ interface Report {
    * puede volver a ofrecer por descuido.
    */
   finalArtifact: { downloadUrl: string } | null;
+  /**
+   * LOS DOCUMENTOS DE LA ÚLTIMA VERSIÓN FIRMADA DEL EXPEDIENTE, en Word y PDF.
+   * Mientras una corrección está abierta, esta versión aún no tiene documento
+   * y lo que se descarga es lo último que se firmó. Opcional: API anterior.
+   */
+  currentSignedDocuments?: DocumentosFirmados | null;
   /**
    * `canApprove` — este informe se ratifica tal como está.
    * `canResolveAndApprove` — hay que completar la evaluación y la conclusión
@@ -718,11 +726,29 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               `canDownloadSigned`, no la mera existencia de un artefacto: es la
               misma capacidad que autoriza la descarga en el servidor. La URL la
               trae el artefacto, que es quien la conoce. */}
-          {cap.canDownloadSigned && rep.finalArtifact && (
-            <a href={`/api/v1${rep.finalArtifact.downloadUrl.replace(/^\/api\/v1/, "")}`} target="_blank" rel="noreferrer"
-               className="rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-medium text-[var(--atm-ok)] hover:bg-green-100">
-              Descargar informe firmado (.docx)
-            </a>
+          {rep.currentSignedDocuments !== undefined ? (
+            /* Los de ESTA versión piden la capacidad, como siempre. Los de una
+               versión anterior —una corrección abierta— se ofrecen porque ése
+               sigue siendo el informe vigente, y se dice de qué versión son. */
+            rep.currentSignedDocuments &&
+            (cap.canDownloadSigned || rep.currentSignedDocuments.reportSnapshotId !== rep.id) && (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <DescargasFirmadas documentos={rep.currentSignedDocuments} />
+                {rep.currentSignedDocuments.reportSnapshotId !== rep.id && (
+                  <span className="text-xs text-zinc-500">
+                    Informe firmado vigente · versión {rep.currentSignedDocuments.version}
+                  </span>
+                )}
+              </span>
+            )
+          ) : (
+            cap.canDownloadSigned &&
+            rep.finalArtifact && (
+              <a href={`/api/v1${rep.finalArtifact.downloadUrl.replace(/^\/api\/v1/, "")}`} target="_blank" rel="noreferrer"
+                 className="rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-medium text-[var(--atm-ok)] hover:bg-green-100">
+                Descargar informe firmado (.docx)
+              </a>
+            )
           )}
         </div>
       </div>

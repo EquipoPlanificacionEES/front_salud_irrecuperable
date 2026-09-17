@@ -14,12 +14,13 @@ import {
 } from "@/lib/backend";
 import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { OrientacionCelda, OrientationReviewCard } from "@/components/OrientationReviewCard";
+import { DescargasFirmadas } from "@/components/DescargasFirmadas";
 import { Aviso, Chip, FilaVacia, Select, Tabla, workflowTono } from "../ui";
 
 // GET /api/v1/reports?batchId=&workflowStatus=&orientation=&limit=&offset=
 // GET /api/v1/reports/:id/orientation-review  (fundamento de la orientación IA)
 // GET /api/v1/reports/:id/download          (PRE_REPORT .docx)
-// GET /api/v1/reports/:id/signed-document   (informe final firmado .docx)
+// GET /api/v1/reports/:id/signed-document?format=docx|pdf  (informe firmado; la ruta la trae `signedDocuments`)
 
 const ORDEN: ReportWorkflowStatus[] = ["READY_FOR_REVIEW", "CHANGES_REQUESTED", "APPROVED", "SIGNING", "SIGNED", "SIGNING_FAILED"];
 const ORIENTACIONES: Orientation[] = ["RECOVERABLE", "IRRECOVERABLE", "INDETERMINATE"];
@@ -261,15 +262,25 @@ export function Informes() {
                 >
                   Preinforme
                 </a>
-                {r.signedAt && (
-                  <a
-                    href={`/api/v1/reports/${r.reportId}/signed-document`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-[var(--atm-azul)] hover:bg-blue-50"
-                  >
-                    Firmado
-                  </a>
+                {/* LA ÚLTIMA VERSIÓN FIRMADA del expediente, en Word y PDF. Durante
+                    una corrección no es la versión de esta fila: por eso la ruta
+                    la trae el servidor y no se arma con `r.reportId`. */}
+                {r.signedDocuments ? (
+                  <span className="ml-1 inline-flex align-middle">
+                    <DescargasFirmadas documentos={r.signedDocuments} compacto />
+                  </span>
+                ) : (
+                  r.signedAt &&
+                  r.signedDocuments === undefined && (
+                    <a
+                      href={`/api/v1/reports/${r.reportId}/signed-document`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-[var(--atm-azul)] hover:bg-blue-50"
+                    >
+                      Firmado
+                    </a>
+                  )
                 )}
                 <button
                   type="button"
@@ -398,7 +409,10 @@ function HistorialVersiones({ reportId }: { reportId: string }) {
           <tr key={v.reportSnapshotId} className="border-t border-[var(--atm-linea)]">
             <td className="py-1.5 text-zinc-700">v{v.version}</td>
             <td className="py-1.5">
-              <Chip tono={v.current ? "ok" : "neutral"}>{v.current ? "Vigente" : "Reemplazada"}</Chip>
+              {/* Una corrección abierta todavía no reemplaza a nadie: no está firmada. */}
+              <Chip tono={v.current ? "ok" : "neutral"}>
+                {v.current ? "Vigente" : v.signedAt ? "Reemplazada" : "Sin firmar"}
+              </Chip>
             </td>
             <td className="py-1.5 text-zinc-600">{v.determination ?? "—"}</td>
             <td className="py-1.5 text-zinc-600">{v.approvedAt?.slice(0, 10) ?? "—"}</td>
@@ -408,7 +422,17 @@ function HistorialVersiones({ reportId }: { reportId: string }) {
               {v.correctionReason ?? "—"}
             </td>
             <td className="py-1.5 text-right whitespace-nowrap">
-              {/* La URL la compone el backend: la pantalla no arma rutas de descarga. */}
+              {/* Los documentos de ESTA versión: una histórica baja la histórica,
+                  nunca la vigente. Una versión sin firmar no ofrece nada. */}
+              {v.signedDocuments !== undefined ? (
+                v.signedDocuments ? (
+                  <DescargasFirmadas documentos={v.signedDocuments} compacto conVersion />
+                ) : (
+                  <span className="text-zinc-400">—</span>
+                )
+              ) : (
+                <>
+              {/* API anterior: la URL la compone el backend igualmente. */}
               {v.finalArtifact && (
                 <a
                   href={v.finalArtifact.downloadUrl}
@@ -430,6 +454,8 @@ function HistorialVersiones({ reportId }: { reportId: string }) {
                 </a>
               )}
               {!v.finalArtifact && !v.finalPdfArtifact && <span className="text-zinc-400">—</span>}
+                </>
+              )}
             </td>
           </tr>
         ))}
