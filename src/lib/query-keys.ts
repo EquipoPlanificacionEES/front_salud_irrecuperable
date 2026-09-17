@@ -79,6 +79,8 @@ export const queryKeys = {
    */
   reportVersions: (reportId: string) => ["reports", "versions", reportId] as const,
   exports: () => ["exports"] as const,
+  /** Bajo `"exports"`: pedir un ZIP invalida también su recuento. */
+  exportPreflight: (filtros: Record<string, string>) => ["exports", "preflight", filtros] as const,
 } as const;
 
 /**

@@ -426,11 +426,32 @@ export const ORIENTATION_REASON_FILTER_LABEL: Record<OrientationReasonCategory, 
   UNKNOWN: "Motivo no identificado",
 };
 
+/**
+ * RECUENTO PREVIO DE LA DESCARGA MASIVA — lo que llevará cada ZIP antes de
+ * pedirlo. Misma selección que la exportación: la versión firmada vigente de
+ * cada expediente.
+ */
+export interface ExportPreflight {
+  totalCases: number;
+  currentSigned: number;
+  noSignedReport: number;
+  word: { ready: number };
+  pdf: { ready: number; failed: number; pending: number; missing: number };
+  pdfUnavailable: { externalCaseId: string; status: "FAILED" | "PENDING" | "MISSING" | "NO_SIGNED_REPORT" }[];
+}
+
 export interface ExportJob {
   id: string;
   type: "SIGNED_REPORTS_ZIP";
   status: ExportStatus;
   filters: Record<string, string>;
+  /** Qué documentos lleva. Opcional: una API anterior no lo manda, y entonces era Word. */
+  format?: "DOCX" | "PDF";
+  /**
+   * Expedientes del alcance que NO van en el ZIP porque su documento no está
+   * disponible. En el ZIP PDF van listados dentro, en `PDF_NO_DISPONIBLES.csv`.
+   */
+  unavailableItems?: number;
   totalItems: number;
   processedItems: number;
   progressPercent: number;

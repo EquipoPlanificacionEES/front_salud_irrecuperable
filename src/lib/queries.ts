@@ -11,6 +11,7 @@ import type {
   AssignmentContext,
   BatchListItem,
   DocumentosFirmados,
+  ExportPreflight,
   DoctorWorkload,
   ExportJob,
   HeldCase,
@@ -282,6 +283,21 @@ export function useExports(opciones?: { intervaloMs?: number }) {
     gcTime: GC.corto,
     refetchInterval: (query) =>
       (query.state.data ?? []).some((j) => EXPORT_EN_CURSO.has(j.status)) ? intervalo : false,
+  });
+}
+
+/**
+ * CUÁNTOS WORD Y CUÁNTOS PDF LLEVARÁ EL ZIP, antes de pedirlo. Sólo lectura: no
+ * crea nada en el servidor. Fresco siempre — un PDF puede terminar de
+ * generarse en cualquier momento.
+ */
+export function useExportPreflight(filtros: Record<string, string>) {
+  const qs = new URLSearchParams(filtros).toString();
+  return useQuery({
+    queryKey: queryKeys.exportPreflight(filtros),
+    queryFn: () => api<ExportPreflight>(`/exports/preflight${qs ? `?${qs}` : ""}`),
+    staleTime: 0,
+    gcTime: GC.corto,
   });
 }
 
