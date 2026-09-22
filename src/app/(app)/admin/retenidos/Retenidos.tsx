@@ -6,6 +6,7 @@ import { useHolds, useInvalidar } from "@/lib/queries";
 import { CASE_STATUS_LABEL, type HeldCase } from "@/lib/backend";
 import { CATEGORIA_RETENCION_LABEL, presentarMotivoRetencion } from "@/lib/retenciones";
 import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
+import { DocumentosExpediente } from "@/components/DocumentosExpediente";
 import { Aviso, Btn, Campo, Chip, FilaVacia, Tabla, Textarea } from "../ui";
 
 /**
@@ -239,6 +240,12 @@ export function Retenidos() {
                     Ver antecedentes
                   </a>
                 )}
+                {/* SIN UN ARCHIVO QUE SEA «EL EXPEDIENTE» pero con documentos:
+                    el expediente llegó en varios, y se miran desde el panel de
+                    revisión, no desde un enlace que enseñaría uno de ellos. */}
+                {!c.sourceDocument && (c.sourceDocumentCount ?? 0) > 1 && (
+                  <span className="mr-1 text-xs text-zinc-500">{c.sourceDocumentCount} documentos</span>
+                )}
                 <Btn variante="ghost" onClick={() => (abierto === c.holdId ? setAbierto(null) : abrir(c))}>
                   {abierto === c.holdId ? "Mantener retenido" : "Revisar"}
                 </Btn>
@@ -249,6 +256,10 @@ export function Retenidos() {
               <tr className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
                 <td colSpan={7} className="px-4 py-4">
                   <div className="space-y-3">
+                    {/* LOS DOCUMENTOS DEL EXPEDIENTE, cuando son varios: quien
+                        levanta una retención de identidad necesita poder abrir
+                        los antecedentes, y aquí no hay uno solo que abrir. */}
+                    {(c.sourceDocumentCount ?? 0) > 1 && <DocumentosExpediente caseId={c.caseId} />}
                     <dl className="grid grid-cols-1 gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
                       <Dato etiqueta="Retenido desde" valor={new Date(c.createdAt).toLocaleString("es-CL")} />
                       <Dato etiqueta="Detalle de la incidencia" valor={c.detail ?? "—"} />

@@ -105,10 +105,53 @@ export interface HeldCase {
     } | null;
   };
   sourceDocument: { downloadUrl: string } | null;
+  /**
+   * Cuántos documentos VIGENTES tiene el expediente. Uno en un contrato de un
+   * archivo por caso; varios cuando llega en carpeta, y ahí `sourceDocument` es
+   * null porque no hay UN archivo que sea «el expediente».
+   */
+  sourceDocumentCount?: number;
   /** Otros expedientes con el MISMO contenido. Pista para investigar, no veredicto. */
   duplicates: { caseId: string; externalCaseId: string }[];
   /** Dónde quedaría si la retención se levantara ahora. Lo dice el clasificador. */
   classificationIfResolved: CaseClassification;
+}
+
+/**
+ * UN DOCUMENTO DE LOS ANTECEDENTES.
+ *
+ * El expediente puede llegar como UN PDF (Valparaíso) o como una carpeta de
+ * varios (ámbitos multi-documento). El estado lo decide el backend a partir de
+ * lo que consta —evidencia vigente, bytes almacenados y lo que su lectura
+ * dijo—: aquí no se deduce nada.
+ */
+export interface CaseDocumentItem {
+  documentId: string;
+  fileName: string;
+  documentType: string;
+  documentClass: "CLINICAL" | "ADMINISTRATIVE" | "NOTIFICATION" | "UNKNOWN" | null;
+  status: "UPLOADED" | "PROCESSING" | "PROCESSED" | "FAILED" | "SUPERSEDED";
+  byteSize: number | null;
+  receivedAt: string | null;
+  downloadUrl: string;
+  warnings: string[];
+}
+
+/** `GET /cases/{id}/documents`. */
+export interface CaseDocuments {
+  caseId: string;
+  ingestionMode: "SINGLE_CASE_FILE" | "MULTI_DOCUMENT_CASE";
+  documents: CaseDocumentItem[];
+  /** Retirados por una sustitución: historial, nunca evidencia vigente. */
+  superseded: CaseDocumentItem[];
+  coverage: {
+    received: number;
+    processed: number;
+    failed: number;
+    /** No falta ningún documento que no pueda faltar. */
+    ready: boolean;
+    blocking: string[];
+  };
 }
 
 /** Retención activa, tal como la presenta el backend. */

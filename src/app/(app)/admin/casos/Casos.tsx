@@ -6,6 +6,7 @@ import { useAdminCases, useBatches, useDoctorWorkload, useInvalidar } from "@/li
 import { CASE_STATUS_LABEL, ORIENTATION_LABEL, WORKFLOW_LABEL } from "@/lib/backend";
 import { Refrescando, TablaSkeleton } from "@/components/Skeleton";
 import { Aviso, Btn, Chip, FilaVacia, Select, Stat, Tabla, Textarea, workflowTono } from "../ui";
+import { DocumentosExpediente } from "@/components/DocumentosExpediente";
 import { RectificarId } from "./RectificarId";
 import { SustituirFuente } from "./SustituirFuente";
 
@@ -29,6 +30,8 @@ export function Casos() {
   const [rectificando, setRectificando] = useState<string | null>(null);
   /** Qué fila tiene abierto el formulario de sustitución de expediente. */
   const [sustituyendo, setSustituyendo] = useState<string | null>(null);
+  /** Qué fila tiene desplegados los documentos del expediente. */
+  const [documentosDe, setDocumentosDe] = useState<string | null>(null);
 
   // Compartidas con el resumen, informes, asignaciones y reasignación: si otra
   // pantalla las pidió hace poco, aquí no cuestan nada.
@@ -210,6 +213,16 @@ export function Casos() {
             <td className="px-4 py-2.5 text-right">
               {rectificando !== c.caseId && sustituyendo !== c.caseId && (
                 <>
+                  {/* QUÉ DOCUMENTOS TIENE EL EXPEDIENTE. Se piden al desplegar
+                      y no con el listado: son 100 casos por página y casi
+                      ninguno necesita mirarlos. */}
+                  <Btn
+                    variante="neutral"
+                    className="mr-2 px-2.5 py-1 text-xs"
+                    onClick={() => setDocumentosDe(documentosDe === c.caseId ? null : c.caseId)}
+                  >
+                    {documentosDe === c.caseId ? "Ocultar documentos" : "Documentos"}
+                  </Btn>
                   <Btn
                     variante="neutral"
                     className="mr-2 px-2.5 py-1 text-xs"
@@ -249,6 +262,13 @@ export function Casos() {
               )}
             </td>
           </tr>
+          {documentosDe === c.caseId && (
+            <tr className="border-t border-[var(--atm-linea)]">
+              <td colSpan={7} className="px-4 pb-3">
+                <DocumentosExpediente caseId={c.caseId} />
+              </td>
+            </tr>
+          )}
           {rectificando === c.caseId && (
             <tr className="border-t border-[var(--atm-linea)]">
               <td colSpan={7} className="px-4 pb-3">
