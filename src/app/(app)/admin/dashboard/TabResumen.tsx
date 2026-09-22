@@ -59,7 +59,7 @@ export function TabResumen({
   const s = d.summary;
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <Kpi
           etiqueta={contexto.semana ? "Casos de la semana" : "Casos en la selección"}
           valor={String(s.total)}
@@ -69,11 +69,25 @@ export function TabResumen({
           tono="azul"
           onClick={() => abrir("all", "Todos los casos de la selección")}
         />
+        {s.medicalAssigned !== undefined && s.medicalWithActivity !== undefined && (
+          <Kpi
+            etiqueta="Avance médico"
+            valor={`${s.medicalWithActivity} / ${s.medicalAssigned}`}
+            detalle={`${formatoPorcentaje(s.medicalProgressPercent ?? null)} con actividad médica`}
+            progreso={s.medicalProgressPercent ?? null}
+            ayuda={AYUDA.avanceMedico}
+            icono="estetoscopio"
+            tono="azul"
+          />
+        )}
         <Kpi
           etiqueta="Finalizados"
           valor={String(s.finalized)}
           detalle={`${formatoPorcentaje(s.progressPercent)} del total`}
           progreso={s.progressPercent}
+          secundario={
+            (s.finalizedAwaitingSignature ?? 0) > 0 ? `${s.finalizedAwaitingSignature} con firma en curso` : undefined
+          }
           icono="check"
           tono="verde"
           onClick={() => abrir("status:FINALIZED", "Finalizados")}
@@ -82,7 +96,7 @@ export function TabResumen({
           etiqueta="Pendientes médicos"
           valor={String(s.pending)}
           detalle={`${formatoPorcentaje(s.pendingPercent)} del total`}
-          secundario={s.onHold > 0 ? `${s.onHold} retenido${s.onHold === 1 ? "" : "s"} aparte` : undefined}
+          secundario={<DesglosePendientes b={s.pendingBreakdown} onHold={s.onHold} />}
           icono="reloj"
           tono="ambar"
           onClick={() => abrir("status:PENDING", "Pendientes médicos")}
@@ -784,6 +798,38 @@ function CalidadBreve({ d, abrir, onVerCalidad }: { d: DashboardOverview; abrir:
       <Boton variante="fantasma" className="mt-2" onClick={onVerCalidad}>
         Ver detalle en Calidad y operación
       </Boton>
+    </>
+  );
+}
+
+/**
+ * EL DESGLOSE DE «PENDIENTES MÉDICOS», tal como lo cuenta el backend: cada caso
+ * una sola vez, en su estado más avanzado. Va dentro del `<p>` de la tarjeta:
+ * sólo `<span>`.
+ */
+function DesglosePendientes({
+  b,
+  onHold,
+}: {
+  b: DashboardOverview["summary"]["pendingBreakdown"];
+  onHold: number;
+}) {
+  const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+  const lineas: string[] = [];
+  if (b) {
+    lineas.push(`${b.notStarted} sin iniciar`, `${b.inReview} en revisión`, `${b.changes} con cambios`);
+    if (b.technicalBlocked > 0) lineas.push(plural(b.technicalBlocked, "bloqueado técnicamente", "bloqueados técnicamente"));
+    if (b.unassigned > 0) lineas.push(`${b.unassigned} sin asignar`);
+  }
+  if (onHold > 0) lineas.push(`${plural(onHold, "retenido", "retenidos")} aparte`);
+  if (lineas.length === 0) return null;
+  return (
+    <>
+      {lineas.map((l) => (
+        <span key={l} className="block">
+          {l}
+        </span>
+      ))}
     </>
   );
 }

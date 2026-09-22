@@ -65,6 +65,9 @@ const OVERVIEW: DashboardOverview = {
     concordancePercent: 100, concordanceN: 49, overrides: 0, overridePercent: 0, indeterminate: 29, indeterminateRatePercent: 31.2, withOrientation: 93,
     medicalCycleP50: null, medicalCycleP90: null, medicalCycleN: 0, medicalCycleEligible: 49, signatureP50: 0.679, signatureN: 49,
     holdsActive: 0, technicalFailures: 3, policyVersions: ["1.2.0"],
+    medicalAssigned: 93, medicalWithActivity: 60, medicalProgressPercent: 64.5,
+    pendingBreakdown: { notStarted: 33, inReview: 3, changes: 8, technicalBlocked: 0, unassigned: 0 },
+    finalizedAwaitingSignature: 0,
   },
   concordance: {
     source: "PRESENTED_TO_DOCTOR", comparable: 49, matches: 49, concordancePercent: 100,
@@ -282,6 +285,22 @@ describe("Dashboard ejecutivo · resumen (Semana 9)", () => {
     expect(within(grupo("Finalizados")).getByText("52,7% del total")).toBeDefined();
     expect(within(grupo("Pendientes médicos")).getByText("44")).toBeDefined();
     expect(within(grupo("Pendientes médicos")).getByText("47,3% del total")).toBeDefined();
+  });
+
+  it("A2 · avance médico 60 / 93 aparte de finalizados, y el desglose de los 44 pendientes", async () => {
+    await pintar();
+    const avance = grupo("Avance médico");
+    expect(within(avance).getByText("60 / 93")).toBeDefined();
+    expect(within(avance).getByText("64,5% con actividad médica")).toBeDefined();
+    // Finalizados sigue siendo su propia cifra.
+    expect(within(grupo("Finalizados")).getByText("49")).toBeDefined();
+    const pendientes = grupo("Pendientes médicos");
+    expect(within(pendientes).getByText("33 sin iniciar")).toBeDefined();
+    expect(within(pendientes).getByText("3 en revisión")).toBeDefined();
+    expect(within(pendientes).getByText("8 con cambios")).toBeDefined();
+    // Sin casos en esos estados, no se pintan.
+    expect(within(pendientes).queryByText(/bloquead/)).toBeNull();
+    expect(within(pendientes).queryByText(/sin asignar/)).toBeNull();
   });
 
   it("B · concordancia 100 % con n = 49 y su definición; nunca «precisión»", async () => {

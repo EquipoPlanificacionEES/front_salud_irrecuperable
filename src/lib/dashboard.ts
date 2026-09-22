@@ -91,6 +91,18 @@ export interface DashboardOverview {
     indeterminate: number; indeterminateRatePercent: number | null; withOrientation: number;
     medicalCycleP50: number | null; medicalCycleP90: number | null; medicalCycleN: number; medicalCycleEligible: number;
     signatureP50: number | null; signatureN: number; holdsActive: number; technicalFailures: number; policyVersions: string[];
+    /**
+     * AVANCE MÉDICO (backend). Con médico a cargo y, de ellos, con actividad
+     * médica real (ratificó, editó o pidió cambios, o pulsó «Revisar»). Abrir no
+     * cuenta. Opcionales: un backend anterior no los trae y la tarjeta no se pinta.
+     */
+    medicalAssigned?: number;
+    medicalWithActivity?: number;
+    medicalProgressPercent?: number | null;
+    /** Los pendientes por estado efectivo, excluyentes; suman `pending`. */
+    pendingBreakdown?: { notStarted: number; inReview: number; changes: number; technicalBlocked: number; unassigned: number };
+    /** Finalizados (ratificados) cuyo documento firmado aún no está listo. */
+    finalizedAwaitingSignature?: number;
   };
   concordance: {
     source: "PRESENTED_TO_DOCTOR"; comparable: number; matches: number; concordancePercent: number | null;
@@ -410,6 +422,8 @@ export const AYUDA = {
     "Casos finalizados cuya orientación presentada al médico fue Recuperable o No recuperable y coincide con el pronunciamiento profesional final.",
   override: "Casos finalizados con orientación presentada Recuperable o No recuperable cuyo pronunciamiento médico final fue el opuesto.",
   indeterminacion: "Orientación presentada Indeterminada sobre los casos con orientación. No es un error: requiere juicio médico.",
+  avanceMedico:
+    "Casos asignados con actividad médica real —revisión iniciada, edición o solicitud de cambios, o ratificación— sobre los casos asignados de la selección. Abrir un expediente no cuenta. No es lo mismo que finalizados.",
   cicloMedico:
     "Desde el primer «Revisar» del médico hasta la ratificación. Disponible para revisiones iniciadas desde la incorporación de la telemetría. No es tiempo activo frente a la pantalla.",
   percentilesMedicos: "Los percentiles se calcularán cuando existan revisiones con inicio registrado.",

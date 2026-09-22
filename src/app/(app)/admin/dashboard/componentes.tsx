@@ -472,8 +472,8 @@ export function Esqueleto({ className = "" }: { className?: string }) {
 export function EsqueletoDashboard() {
   return (
     <div className="space-y-4" aria-busy="true" aria-label="Cargando métricas">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 6 }, (_, i) => (
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        {Array.from({ length: 7 }, (_, i) => (
           <Esqueleto key={i} className="h-[136px]" />
         ))}
       </div>
