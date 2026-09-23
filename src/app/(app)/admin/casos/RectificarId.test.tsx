@@ -22,7 +22,7 @@ import type { OperationalCase } from "@/lib/backend";
 
 const ORIGEN: OperationalCase = {
   caseId: "00000000-0000-4000-8000-000000000001",
-  scope: { contractCode: "INT_36", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
+  scope: { contractCode: "INT_36", contractName: "Evaluaciones de salud irrecuperable · COMPIN Valparaíso", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
   externalCaseId: "34208241",
   previousExternalCaseId: null,
   classification: "SIGNED",
@@ -48,7 +48,7 @@ const ORIGEN: OperationalCase = {
 const PLACEHOLDER: OperationalCase = {
   ...ORIGEN,
   caseId: "00000000-0000-4000-8000-000000000002",
-  scope: { contractCode: "INT_36", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
+  scope: { contractCode: "INT_36", contractName: "Evaluaciones de salud irrecuperable · COMPIN Valparaíso", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
   externalCaseId: "34218380",
   classification: "HOLD",
   hold: { active: true, statement: "Retenido." },

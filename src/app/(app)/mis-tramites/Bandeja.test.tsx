@@ -25,7 +25,7 @@ function caso(
   const conInforme = opciones.conInforme ?? classification !== "NO_REPORT";
   return {
     caseId: `00000000-0000-4000-8000-${externalCaseId.padStart(12, "0")}`,
-    scope: { contractCode: "INT_36", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
+    scope: { contractCode: "INT_36", contractName: "Evaluaciones de salud irrecuperable · COMPIN Valparaíso", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
     externalCaseId,
     previousExternalCaseId: null,
     classification,
@@ -192,7 +192,7 @@ describe("Bandeja · las tres pestañas cubren todo lo asignado", () => {
 describe("bandeja de un médico con dos ámbitos", () => {
   const enOtraRegion = (externalCaseId: string): OperationalCase => ({
     ...caso(externalCaseId, "PENDING_REVIEW"),
-    scope: { contractCode: "OTRO_CONTRATO", regionCode: "TARAPACA", regionName: "Región de Tarapacá" },
+    scope: { contractCode: "OTRO_CONTRATO", contractName: "Evaluaciones de salud irrecuperable · COMPIN Tarapacá", regionCode: "TARAPACA", regionName: "Región de Tarapacá" },
   });
 
   const mezcla = [
@@ -226,5 +226,81 @@ describe("bandeja de un médico con dos ámbitos", () => {
   it("con UN solo ámbito no aparece el selector: no habría nada que separar", async () => {
     await pintar([caso("11111111", "PENDING_REVIEW")]);
     expect(screen.queryByRole("button", { name: /^Todas/ })).toBeNull();
+  });
+});
+
+/**
+ * LA BANDEJA ES DEL MÉDICO, NO DEL ÁMBITO ACTIVO.
+ *
+ * Lo que autoriza a un profesional a ver un expediente es que se le haya
+ * ASIGNADO; el selector de la cabecera describe dónde está mirando, no qué le
+ * pertenece. Filtrando por él, quien lleva dos contratos veía la mitad de su
+ * trabajo y tenía que acordarse de cambiar de ámbito para encontrar el resto.
+ */
+describe("bandeja global de un médico con dos ámbitos", () => {
+  const enOtro = (externalCaseId: string, clasificacion: CaseClassification = "PENDING_REVIEW"): OperationalCase => ({
+    ...caso(externalCaseId, clasificacion),
+    scope: {
+      contractCode: "OTRO_CONTRATO",
+      contractName: "Evaluaciones de salud irrecuperable · COMPIN Tarapacá",
+      regionCode: "TARAPACA",
+      regionName: "Región de Tarapacá",
+    },
+  });
+
+  const mezcla = [
+    caso("11111111", "PENDING_REVIEW"),
+    caso("22222222", "PENDING_REVIEW"),
+    caso("44444444", "SIGNED"),
+    enOtro("33333333"),
+    enOtro("55555555", "SIGNED"),
+  ];
+
+  it("por defecto trae TODOS sus casos, de los dos ámbitos", async () => {
+    await pintar(mezcla);
+    // Pendientes de los dos contratos, sin tocar ningún selector.
+    expect(screen.getByText("11111111")).toBeDefined();
+    expect(screen.getByText("33333333")).toBeDefined();
+    expect(screen.getByRole("button", { name: /Todas \(5\)/ })).toBeDefined();
+  });
+
+  it("la pestaña de cada ámbito filtra, y sus cuentas salen de SUS casos", async () => {
+    await pintar(mezcla);
+    expect(screen.getByRole("button", { name: /Región de Valparaíso \(3\)/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Región de Tarapacá \(2\)/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Región de Tarapacá \(2\)/ }));
+    await waitFor(() => expect(screen.getByText("33333333")).toBeDefined());
+    expect(screen.queryByText("11111111")).toBeNull();
+  });
+
+  it("se combina con Pendientes e Histórico, y los contadores acompañan", async () => {
+    await pintar(mezcla);
+    // Todos: 3 pendientes (dos de Valparaíso, uno de Tarapacá) y 2 firmados.
+    expect(screen.getByRole("button", { name: /Pendientes \(3\)/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Histórico \(2\)/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Región de Tarapacá/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Pendientes \(1\)/ })).toBeDefined());
+    expect(screen.getByRole("button", { name: /Histórico \(1\)/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Histórico \(1\)/ }));
+    await waitFor(() => expect(screen.getByText("55555555")).toBeDefined());
+    expect(screen.queryByText("44444444")).toBeNull();
+  });
+
+  it("la búsqueda alcanza los casos de CUALQUIER ámbito suyo", async () => {
+    await pintar(mezcla);
+    fireEvent.change(screen.getByPlaceholderText(/Buscar por Nº de caso/i), { target: { value: "3333" } });
+    await waitFor(() => expect(screen.getByText("33333333")).toBeDefined());
+    expect(screen.queryByText("11111111")).toBeNull();
+  });
+
+  it("no inventa filas: sólo aparece lo que el servidor devolvió", async () => {
+    // «Todas» significa todos MIS casos, nunca todos los del tenant: la lista
+    // es exactamente la respuesta de /inbox.
+    await pintar(mezcla);
+    const filas = screen.getAllByRole("row").length - 1; // menos la cabecera
+    expect(filas).toBe(3); // los pendientes, que es la pestaña por defecto
   });
 });

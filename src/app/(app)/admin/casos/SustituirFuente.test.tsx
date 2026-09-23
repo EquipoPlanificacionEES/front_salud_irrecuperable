@@ -19,7 +19,7 @@ import type { OperationalCase } from "@/lib/backend";
 
 const CASO: OperationalCase = {
   caseId: "00000000-0000-4000-8000-000000000001",
-  scope: { contractCode: "INT_36", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
+  scope: { contractCode: "INT_36", contractName: "Evaluaciones de salud irrecuperable · COMPIN Valparaíso", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
   externalCaseId: "32895245",
   previousExternalCaseId: null,
   classification: "HOLD",

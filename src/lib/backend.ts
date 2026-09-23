@@ -311,7 +311,7 @@ export interface OperationalCase {
    * cabecera promete que la bandeja es de uno solo, y esto deja verlo sin
    * confiar en la promesa.
    */
-  scope: { contractCode: string; regionCode: string | null; regionName: string | null };
+  scope: { contractCode: string; contractName: string; regionCode: string | null; regionName: string | null };
   /** El número de trámite VIGENTE: el canónico si hubo rectificación. */
   externalCaseId: string;
   /**

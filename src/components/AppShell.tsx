@@ -27,11 +27,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span>
               {sesion.nombre} · <span className="capitalize">{sesion.rol}</span>
             </span>
-            <SelectorAmbito
-              ambitos={sesion.ambitos}
-              activoContractId={sesion.activoContractId}
-              activoRegionId={sesion.activoRegionId}
-            />
+            {/*
+              EN «MIS CASOS» EL SELECTOR NO PINTA NADA, Y ENSEÑARLO ENGAÑA.
+              La bandeja del médico es GLOBAL: trae todos los expedientes que
+              tiene asignados, del ámbito que sean, porque lo que le autoriza a
+              verlos es su asignación y no dónde esté mirando. Dejar arriba un
+              selector que parece gobernar la lista invita a cambiarlo para
+              «ver los de la otra región» —y no hace nada—. Separar por ámbito
+              se hace con las pestañas de la propia bandeja.
+              Fuera de esa pantalla sigue igual para todos los roles.
+            */}
+            {!pathname.startsWith("/mis-tramites") && (
+              <SelectorAmbito
+                ambitos={sesion.ambitos}
+                activoContractId={sesion.activoContractId}
+                activoRegionId={sesion.activoRegionId}
+              />
+            )}
           </p>
         </div>
         {/* Reacciona al instante: cerrar sesión llama al backend, vacía la

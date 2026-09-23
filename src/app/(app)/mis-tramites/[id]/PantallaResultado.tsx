@@ -12,6 +12,7 @@ import {
 } from "@/lib/queries";
 import { queryKeys } from "@/lib/query-keys";
 import { FichaSkeleton, Refrescando } from "@/components/Skeleton";
+import { ContextoAmbito } from "./ContextoAmbito";
 import {
   EditorInforme,
   borradorInicial,
@@ -272,6 +273,7 @@ function VistaMinima({ caso }: { caso: OperationalCase }) {
       <div className="rounded-xl border border-[var(--atm-linea)] bg-white px-5 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
+            <ContextoAmbito caso={caso} />
             <h3 className="text-base font-semibold text-zinc-900">Trámite {caso.externalCaseId}</h3>
             <p className="mt-0.5 text-xs text-zinc-500">Este expediente todavía no tiene informe.</p>
           </div>
@@ -342,6 +344,18 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    */
   const sinInforme = informe.error instanceof ApiFallo && informe.error.status === 404;
   const enBandeja = useDoctorInbox(seleccionarCaso(caseId), { enabled: sinInforme }).data;
+  /**
+   * EL ÁMBITO DEL EXPEDIENTE, para no perder el contexto al entrar.
+   *
+   * SE LEE DE LA CACHÉ, no se pide: es la misma consulta de la bandeja de la
+   * que se viene, y `enabled: false` no impide leer lo que ya está. Pedirla
+   * aquí añadiría una petición a cada ficha para pintar dos palabras — y
+   * además metía un `/inbox` en medio de flujos que no lo esperaban.
+   *
+   * Quien abra la ficha por su URL directa no verá la línea de contexto. Es la
+   * degradación correcta: mejor no decir la región que decir una equivocada.
+   */
+  const delAmbito = enBandeja ?? null;
   /**
    * `enabled: false` NO impide leer lo que ya hay en caché: si la bandeja se
    * cargó en la pantalla anterior —que es lo normal—, esta consulta devuelve el
@@ -689,6 +703,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
       <div className="rounded-xl border border-[var(--atm-linea)] bg-white px-5 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
+            <ContextoAmbito caso={delAmbito} />
             <h3 className="text-base font-semibold text-zinc-900">
               Trámite {rep.caseIdentifier?.current ?? rep.caseReference}
             </h3>
