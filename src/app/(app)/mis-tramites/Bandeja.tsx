@@ -122,6 +122,10 @@ export function Bandeja() {
           <thead>
             <tr className="bg-[var(--atm-th)] text-left text-white">
               <th className="px-4 py-2.5 font-medium">Nº de caso</th>
+              {/* El ámbito del expediente. Ver `scope` en `OperationalCase`:
+                  un mismo médico puede llevar dos contratos con un solo perfil,
+                  y la fila tiene que decir de cuál es. */}
+              <th className="px-4 py-2.5 font-medium">Ámbito</th>
               <th className="px-4 py-2.5 font-medium">Estado</th>
               <th className="px-4 py-2.5 font-medium">Orientación</th>
               <th className="px-4 py-2.5"></th>
@@ -130,7 +134,7 @@ export function Bandeja() {
           <tbody>
             {filtrados.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={5} className="px-4 py-12 text-center text-sm text-zinc-400">
                   {buscar
                     ? "Ningún caso de esta lista coincide con la búsqueda."
                     : tab === "pendientes"
@@ -149,6 +153,11 @@ export function Bandeja() {
               return (
                 <tr key={c.caseId} className="border-t border-[var(--atm-linea)] hover:bg-[var(--atm-fondo)]">
                   <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{c.externalCaseId}</td>
+                  {/* La región cuando consta; si no, el contrato. Nunca un
+                      nombre inventado para rellenar la columna. */}
+                  <td className="px-4 py-2.5 text-xs text-zinc-600">
+                    {c.scope?.regionName ?? c.scope?.contractCode ?? "—"}
+                  </td>
                   <td className="px-4 py-2.5">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${chip.clase}`}>{chip.texto}</span>
                   </td>

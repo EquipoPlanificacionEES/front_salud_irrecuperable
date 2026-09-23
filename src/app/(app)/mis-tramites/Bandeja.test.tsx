@@ -25,6 +25,7 @@ function caso(
   const conInforme = opciones.conInforme ?? classification !== "NO_REPORT";
   return {
     caseId: `00000000-0000-4000-8000-${externalCaseId.padStart(12, "0")}`,
+    scope: { contractCode: "INT_36", regionCode: "VALPARAISO", regionName: "Región de Valparaíso" },
     externalCaseId,
     previousExternalCaseId: null,
     classification,
