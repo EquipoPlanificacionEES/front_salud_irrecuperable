@@ -5,6 +5,7 @@ import { api } from "./api";
 import { GC, STALE, queryKeys, type AdminCasesFiltros, type AdminReportsFiltros } from "./query-keys";
 import type {
   AdminDoctor,
+  DoctorAccessScope,
   AdminUser,
   Cita,
   Peritaje,
@@ -270,6 +271,46 @@ export function useAdminUsers() {
     queryFn: () => api<{ users: AdminUser[] }>("/admin/users?limit=200").then((d) => d.users),
     staleTime: STALE.usuarios,
     gcTime: GC.largo,
+  });
+}
+
+/**
+ * DÓNDE PUEDE TRABAJAR UN MÉDICO.
+ *
+ * `enabled` porque la pantalla de usuarios sólo lo pide cuando alguien abre los
+ * accesos de una fila: traerlo para las treinta filas de la tabla serían
+ * treinta peticiones para mirar una.
+ */
+export function useDoctorAccess(doctorProfileId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.admin.doctorAccess(doctorProfileId ?? ""),
+    queryFn: () =>
+      api<{ scopes: DoctorAccessScope[] }>(`/admin/doctors/${doctorProfileId}/access`).then((d) => d.scopes),
+    enabled: doctorProfileId !== null,
+    staleTime: STALE.usuarios,
+    gcTime: GC.corto,
+  });
+}
+
+/**
+ * Conceder o retirar UN ámbito. Una casilla por petición: la respuesta trae la
+ * lista entera ya recalculada, así que se escribe en la caché en vez de pedirla
+ * otra vez.
+ */
+export function useSetDoctorAccess(doctorProfileId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cuerpo: { contractRegionId: string; granted: boolean }) =>
+      api<{ scopes: DoctorAccessScope[] }>(`/admin/doctors/${doctorProfileId}/access`, {
+        method: "PUT",
+        json: cuerpo,
+      }).then((d) => d.scopes),
+    onSuccess: (scopes) => {
+      qc.setQueryData(queryKeys.admin.doctorAccess(doctorProfileId), scopes);
+      // Cambiar un acceso cambia a quién ofrece el selector al asignar.
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.doctorWorkload() });
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.doctors() });
+    },
   });
 }
 

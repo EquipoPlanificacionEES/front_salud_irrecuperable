@@ -181,3 +181,50 @@ describe("Bandeja · las tres pestañas cubren todo lo asignado", () => {
     expect(screen.queryByText("Por revisar")).toBeNull();
   });
 });
+
+/**
+ * UN MÉDICO QUE TRABAJA DOS CONTRATOS.
+ *
+ * Su bandeja los trae juntos —lo que le autoriza a ver un expediente es que se
+ * le haya asignado, no dónde esté mirando—, así que la pantalla tiene que
+ * separarlos sin esconder ninguno.
+ */
+describe("bandeja de un médico con dos ámbitos", () => {
+  const enOtraRegion = (externalCaseId: string): OperationalCase => ({
+    ...caso(externalCaseId, "PENDING_REVIEW"),
+    scope: { contractCode: "OTRO_CONTRATO", regionCode: "TARAPACA", regionName: "Región de Tarapacá" },
+  });
+
+  const mezcla = [
+    caso("11111111", "PENDING_REVIEW"),
+    caso("22222222", "PENDING_REVIEW"),
+    enOtraRegion("33333333"),
+  ];
+
+  it("cada fila dice de qué ámbito es", async () => {
+    await pintar(mezcla);
+    expect(screen.getAllByText("Región de Valparaíso")).toHaveLength(2);
+    expect(screen.getAllByText("Región de Tarapacá")).toHaveLength(1);
+  });
+
+  it("el selector cuenta por ámbito y filtra, sin volver a pedir nada", async () => {
+    await pintar(mezcla);
+    const llamadasAntes = (globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: /Región de Tarapacá \(1\)/ }));
+    await waitFor(() => expect(screen.getByText("33333333")).toBeDefined());
+    expect(screen.queryByText("11111111")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Todas \(3\)/ }));
+    await waitFor(() => expect(screen.getByText("11111111")).toBeDefined());
+    expect(screen.getByText("33333333")).toBeDefined();
+
+    // Cambiar de ámbito es filtrar lo que ya se trajo: ni una petición más.
+    expect((globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(llamadasAntes);
+  });
+
+  it("con UN solo ámbito no aparece el selector: no habría nada que separar", async () => {
+    await pintar([caso("11111111", "PENDING_REVIEW")]);
+    expect(screen.queryByRole("button", { name: /^Todas/ })).toBeNull();
+  });
+});

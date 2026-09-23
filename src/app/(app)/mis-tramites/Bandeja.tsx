@@ -46,6 +46,15 @@ export function Bandeja() {
   // Estado de INTERFAZ, que no es estado de servidor y por eso sigue aquí.
   const [tab, setTab] = useState<PestañaBandeja>("pendientes");
   const [buscar, setBuscar] = useState("");
+  /**
+   * EL ÁMBITO ELEGIDO. `null` = todos.
+   *
+   * Un profesional puede llevar dos contratos con un solo perfil, y su bandeja
+   * los trae juntos: lo que autoriza a ver un expediente es que se le haya
+   * asignado, no dónde esté mirando. Esto separa la lista sin pedirle nada al
+   * servidor.
+   */
+  const [region, setRegion] = useState<string | null>(null);
 
   const casos = useMemo(() => data ?? [], [data]);
   const error = fallo
@@ -58,14 +67,29 @@ export function Bandeja() {
 
   // Las tres pestañas salen de esta misma lista: cambiar de pestaña no pide
   // nada al servidor, y no debe empezar a hacerlo.
+  /** Etiqueta del ámbito: la región cuando consta, el contrato si no. */
+  const ambitoDe = (c: OperationalCase) => c.scope?.regionName ?? c.scope?.contractCode ?? "Sin ámbito";
+
+  /**
+   * Los ámbitos que aparecen SALEN DE SUS CASOS, no de una lista fija: un
+   * médico no tiene por qué ver el nombre de una región en la que no trabaja.
+   */
+  const ambitos = useMemo(() => {
+    const cuenta = new Map<string, number>();
+    for (const c of casos) cuenta.set(ambitoDe(c), (cuenta.get(ambitoDe(c)) ?? 0) + 1);
+    return [...cuenta.entries()].sort((a, b) => a[0].localeCompare(b[0], "es"));
+  }, [casos]);
+
   const filtrados = useMemo(() => {
     const q = buscar.trim().toLowerCase();
     return casos
       .filter((c) => pestañaDe(c) === tab)
+      .filter((c) => region === null || ambitoDe(c) === region)
       .filter((c) => !q || c.externalCaseId.toLowerCase().includes(q));
-  }, [casos, tab, buscar]);
+  }, [casos, tab, buscar, region]);
 
-  const cuantos = (p: PestañaBandeja) => casos.filter((c) => pestañaDe(c) === p).length;
+  const cuantos = (p: PestañaBandeja) =>
+    casos.filter((c) => pestañaDe(c) === p).filter((c) => region === null || ambitoDe(c) === region).length;
   const nPend = cuantos("pendientes");
   const nRet = cuantos("retenidos");
   const nHist = cuantos("historico");
@@ -101,6 +125,25 @@ export function Bandeja() {
             </button>
           ))}
         </div>
+        {/* SÓLO CON MÁS DE UN ÁMBITO. Un único botón «Valparaíso» junto a
+            «Todas» no separa nada y ocupa la fila de las pestañas que sí. */}
+        {ambitos.length > 1 && (
+          <div className="flex rounded-lg border border-[var(--atm-linea)] bg-white p-0.5">
+            {([[null, `Todas (${casos.length})`] as const] as readonly (readonly [string | null, string])[])
+              .concat(ambitos.map(([nombre, n]) => [nombre, `${nombre} (${n})`] as const))
+              .map(([valor, etiqueta]) => (
+                <button
+                  key={valor ?? "todas"}
+                  onClick={() => setRegion(valor)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    region === valor ? "bg-[var(--atm-azul)] text-white" : "text-zinc-600 hover:bg-zinc-50"
+                  }`}
+                >
+                  {etiqueta}
+                </button>
+              ))}
+          </div>
+        )}
         <Refrescando visible={isFetching} />
         {porRevisar > 0 && tab === "pendientes" && (
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-[var(--atm-azul)]">

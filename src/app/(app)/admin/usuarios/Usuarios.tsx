@@ -6,6 +6,7 @@ import { useAdminDoctors, useAdminUsers, useInvalidar } from "@/lib/queries";
 import { TablaSkeleton } from "@/components/Skeleton";
 import type { AdminDoctor, AdminUser } from "@/lib/backend";
 import { Aviso, Btn, Campo, Chip, FilaVacia, Input, Select, Tabla } from "../ui";
+import { AccesosMedico } from "./AccesosMedico";
 
 // Administración de cuentas contra el backend real:
 //   GET/POST /api/v1/admin/users · PATCH /api/v1/admin/users/:id · .../deactivate · .../reactivate · .../credential-setup
@@ -33,6 +34,8 @@ export function Usuarios() {
   const [token, setToken] = useState<{ correo: string; token: string; expira: string } | null>(null);
   const [claveCreada, setClaveCreada] = useState<{ correo: string; password: string } | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
+  /** Qué médico tiene abierto el panel de accesos. Uno cada vez. */
+  const [accesosDe, setAccesosDe] = useState<string | null>(null);
   const [edit, setEdit] = useState({ displayName: "", profession: "", nationalId: "", professionalCode: "" });
   const [crear, setCrear] = useState(false);
   const [modoClave, setModoClave] = useState<"token" | "password">("password");
@@ -346,6 +349,18 @@ export function Usuarios() {
                       Reemitir token
                     </Btn>
                   )}
+                  {/* SÓLO PARA QUIEN TIENE PERFIL MÉDICO: los accesos por
+                      contrato y región son de un profesional, no de un usuario
+                      administrativo. */}
+                  {f.doctor && (
+                    <Btn
+                      variante="neutral"
+                      className="ml-1 px-2.5 py-1 text-xs"
+                      onClick={() => setAccesosDe(accesosDe === f.doctor?.id ? null : (f.doctor?.id ?? null))}
+                    >
+                      {accesosDe === f.doctor.id ? "Ocultar accesos" : "Accesos"}
+                    </Btn>
+                  )}
                   <Btn variante="neutral" className="ml-1 px-2.5 py-1 text-xs" onClick={() => cambiarEstado(f)}>
                     {f.status === "INACTIVE" ? "Reactivar" : "Desactivar"}
                   </Btn>
@@ -354,6 +369,17 @@ export function Usuarios() {
             )}
           </tr>
         ))}
+        {/* El panel va en su propia fila, debajo de la del médico: una columna
+            más en la tabla apretaría las siete que ya hay. */}
+        {filas.map((f) =>
+          f.doctor && accesosDe === f.doctor.id ? (
+            <tr key={`accesos-${f.id}`} className="border-t border-[var(--atm-linea)]">
+              <td colSpan={8} className="px-4 py-3">
+                <AccesosMedico doctor={f.doctor} />
+              </td>
+            </tr>
+          ) : null,
+        )}
       </Tabla>
     </div>
   );

@@ -604,6 +604,25 @@ export interface AdminUser {
   lastLoginAt: string | null;
 }
 
+/**
+ * UN ÁMBITO DEL TENANT Y SI ESTE MÉDICO PUEDE TRABAJARLO.
+ *
+ * Vienen todos, tenga acceso o no: la pantalla es una lista de casillas y una
+ * casilla que no aparece no se puede marcar. `activeAssignments` es lo que
+ * convierte desmarcar en una decisión informada.
+ */
+export interface DoctorAccessScope {
+  contractRegionId: string;
+  contractId: string;
+  contractCode: string;
+  contractName: string;
+  regionId: string;
+  regionCode: string;
+  regionName: string;
+  granted: boolean;
+  activeAssignments: number;
+}
+
 export interface AdminDoctor {
   id: string;
   userId: string;
