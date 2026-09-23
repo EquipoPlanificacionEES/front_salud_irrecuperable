@@ -27,6 +27,7 @@ import { FueraDeAmbito } from "./FueraDeAmbito";
 import { PanelCita } from "./PanelCita";
 import { api, ApiFallo } from "@/lib/api";
 import {
+  type CaseDocumentItem,
   type DocumentoInforme,
   type DocumentosFirmados,
   type IdentityWarning,
@@ -35,6 +36,7 @@ import {
   type ReportWorkflowStatus,
 } from "@/lib/backend";
 import { AdvertenciaIdentidad } from "@/components/AdvertenciaIdentidad";
+import { ListaDocumentos } from "@/components/DocumentosExpediente";
 import { DescargasFirmadas } from "@/components/DescargasFirmadas";
 import {
   censarLicencias,
@@ -129,6 +131,12 @@ interface Report {
    * `null` cuando el caso no tiene uno almacenado.
    */
   sourceDocument: { downloadUrl: string } | null;
+  /**
+   * TODOS los antecedentes del expediente, cuando llega en varios documentos.
+   * Con un solo archivo trae ese archivo y la pantalla no cambia; con una
+   * carpeta, el médico abre el que necesite en vez del primero que salga.
+   */
+  sourceDocuments?: CaseDocumentItem[];
   reviews: Review[];
   /**
    * El informe FIRMADO. `draftArtifact` sigue existiendo en la respuesta —el
@@ -752,6 +760,12 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           )}
         </div>
       </div>
+
+      {/* LOS ANTECEDENTES, CUANDO SON VARIOS. Con un único archivo no aparece
+          nada: el botón «Ver antecedentes» de arriba sigue siendo lo correcto.
+          Con una carpeta, el médico tiene que poder abrir CUALQUIERA de los
+          documentos, no el que quedó primero. */}
+      <ListaDocumentos documentos={rep.sourceDocuments ?? []} titulo="Antecedentes del caso" />
 
       {/* RETENCIÓN OPERACIONAL. Va lo primero, antes que cualquier otro aviso:
           es la razón por la que no hay botones, y leerla después de bajar el

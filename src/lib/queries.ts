@@ -10,6 +10,7 @@ import type {
   Peritaje,
   AssignmentContext,
   BatchListItem,
+  CaseDocuments,
   DocumentosFirmados,
   ExportPreflight,
   DoctorWorkload,
@@ -90,6 +91,24 @@ export function useCaseReport<T>(caseId: string, opciones?: { enabled?: boolean 
     gcTime: GC.corto,
     enabled: opciones?.enabled ?? true,
     // Un 404 es un caso sin informe: legítimo, y la ficha lo sabe tratar.
+    retry: false,
+  });
+}
+
+/**
+ * LOS DOCUMENTOS DE UN EXPEDIENTE. Uno, o los N de una carpeta.
+ *
+ * Se pide APARTE y a demanda: la inmensa mayoría de las pantallas no los
+ * necesita, y la ficha del médico ya los trae dentro del informe. Quien lo usa
+ * es quien despliega «Documentos» en administración.
+ */
+export function useCaseDocuments(caseId: string, opciones?: { enabled?: boolean }) {
+  return useQuery<CaseDocuments>({
+    queryKey: queryKeys.cases.documentos(caseId),
+    queryFn: () => api<CaseDocuments>(`/cases/${caseId}/documents`),
+    staleTime: STALE.caseDocumentos,
+    gcTime: GC.corto,
+    enabled: opciones?.enabled ?? true,
     retry: false,
   });
 }

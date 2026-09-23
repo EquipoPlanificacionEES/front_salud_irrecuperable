@@ -45,6 +45,8 @@ export const queryKeys = {
     peritaje: (caseId: string) => ["cases", caseId, "telematic-assessment"] as const,
     /** `GET /cases/{id}/appointment` — la cita vigente, o null. */
     cita: (caseId: string) => ["cases", caseId, "appointment"] as const,
+    /** `GET /cases/{id}/documents` — los antecedentes, uno o varios. */
+    documentos: (caseId: string) => ["cases", caseId, "documents"] as const,
   },
   admin: {
     todo: () => ["admin"] as const,
@@ -109,6 +111,8 @@ export const STALE = {
    * mutación que toca el informe.
    */
   caseReport: 5_000,
+  /** Los documentos de un expediente sólo cambian con una ingesta o una sustitución. */
+  caseDocumentos: 30_000,
   manualForm: 0,
   /**
    * EL BORRADOR NO SE REVALIDA SOLO.
