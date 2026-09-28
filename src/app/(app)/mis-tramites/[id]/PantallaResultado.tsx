@@ -171,6 +171,19 @@ interface Report {
      * Opcional para no romper una caché con la forma anterior.
      */
     requiresTelematicAssessment?: boolean;
+    /**
+     * ADVERTENCIAS DOCUMENTALES del expediente. NO impiden ratificar: son lo
+     * que el expediente no pudo comprobar de sí mismo, y el profesional tiene
+     * que verlo ANTES de pronunciarse, no descubrirlo después.
+     */
+    administrativeWarnings?: {
+      code: string;
+      statement: string;
+      evidence: string;
+      blocksFinalDocument: boolean;
+    }[];
+    /** Ratificar ahora registra el pronunciamiento; el documento sale después. */
+    finalDocumentDeferred?: boolean;
     /** El documento final está emitido y esta sesión puede descargarlo. */
     canDownloadSigned: boolean;
     /**
@@ -436,6 +449,9 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   }, []);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** El médico ya vio las advertencias documentales y aun así quiere ratificar. */
+  const [confirmarAvisos, setConfirmarAvisos] = useState(false);
+  const [confirmadoConAvisos, setConfirmadoConAvisos] = useState(false);
   /**
    * SALIR DEL EDITOR CON TRABAJO SIN GUARDAR TIENE QUE COSTAR UN PASO.
    *
@@ -599,6 +615,16 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     if (!rep) return;
     const resolviendo = modo === "resolver";
     if (resolviendo && (!cuerpoListo || faltaMotivo)) return;
+    /**
+     * CONFIRMAR, NO IMPEDIR. Si el expediente arrastra advertencias
+     * documentales, se dicen antes de ratificar —y se dice que el documento
+     * saldrá después— pero la decisión sigue siendo del médico.
+     */
+    if ((rep.capabilities.administrativeWarnings ?? []).length > 0 && !confirmadoConAvisos) {
+      setConfirmarAvisos(true);
+      return;
+    }
+    setConfirmarAvisos(false);
     setBusy(true);
     setMsg(null);
     try {
@@ -607,6 +633,17 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
         setModo("ver");
       } else {
         await api(`/reports/${rep.id}/approve`, { json: {} });
+      }
+      if (rep.capabilities.finalDocumentDeferred) {
+        setMsg({
+          ok: true,
+          texto:
+            "Informe ratificado. Tu pronunciamiento quedó registrado. El documento firmado se " +
+            "emitirá cuando coordinación valide los antecedentes administrativos pendientes; no " +
+            "tienes que volver a hacer nada.",
+        });
+        await cargar();
+        return;
       }
       setMsg({ ok: true, texto: "Informe ratificado. Generando el documento firmado…" });
       // El documento firmado lo produce un worker; sondeamos hasta que exista.
@@ -1144,6 +1181,61 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                 <p role="note" className="w-full text-sm text-zinc-700">
                   {avisoPronunciamiento}
                 </p>
+              )}
+              {/*
+                LAS ADVERTENCIAS DEL EXPEDIENTE, ANTES DE PRONUNCIARSE.
+                No cierran nada: son lo que el expediente no pudo comprobar de
+                sí mismo, y quien firma su juicio tiene derecho a saberlo ahora
+                y no después. La redacción es del servidor: aquí no se
+                interpreta ni se resume.
+              */}
+              {(cap.administrativeWarnings ?? []).length > 0 && (
+                <div
+                  role="note"
+                  className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                >
+                  <p className="font-semibold">Advertencias sobre los antecedentes</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5">
+                    {(cap.administrativeWarnings ?? []).map((a) => (
+                      <li key={a.code}>
+                        {a.statement} <span className="text-amber-800">({a.evidence})</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {cap.finalDocumentDeferred && (
+                    <p className="mt-2">
+                      Puedes ratificar igualmente: tu pronunciamiento queda registrado. El documento
+                      firmado se emitirá cuando coordinación valide estos antecedentes.
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* CONFIRMAR, NO IMPEDIR. Se pregunta una vez y la decisión es suya. */}
+              {confirmarAvisos && (
+                <div className="w-full rounded-lg border border-[var(--atm-linea)] bg-white p-3 text-sm">
+                  <p>
+                    Este expediente tiene advertencias sobre sus antecedentes. ¿Ratificar de todos
+                    modos con lo que consta?
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={() => setConfirmarAvisos(false)}
+                      className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm"
+                    >
+                      Revisar antes
+                    </button>
+                    <button
+                      onClick={() => {
+                        setConfirmadoConAvisos(true);
+                        setConfirmarAvisos(false);
+                        void ratificar();
+                      }}
+                      className="rounded-lg bg-[var(--atm-azul)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)]"
+                    >
+                      Ratificar de todos modos
+                    </button>
+                  </div>
+                </div>
               )}
               {cap.canRequestChanges && (
                 <button onClick={() => abrirFormulario("modificar")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
