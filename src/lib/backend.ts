@@ -324,6 +324,14 @@ export interface OperationalCase {
   /** Retención activa, o null. */
   hold: CaseHold | null;
   /**
+   * EL CONTROL PREVIO DEL EXPEDIENTE, resumido por el servidor.
+   *
+   * `finalizationBlockerCount > 0` significa: se puede trabajar y ratificar, y
+   * la emisión del documento esperará a que coordinación valide. NO es un error
+   * ni una retención. Opcional para no romper una caché con la forma anterior.
+   */
+  qa?: { warningCount: number; finalizationBlockerCount: number };
+  /**
    * El expediente original, cuando existe. La URL la compone el backend. Es lo
    * que permite ofrecer los antecedentes de un caso retenido SIN informe, que no
    * tiene ninguna otra vía para hacerlo.

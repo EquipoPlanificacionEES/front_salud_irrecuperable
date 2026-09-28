@@ -12,6 +12,7 @@ const TABS = [
   { href: "/admin/reasignacion", etiqueta: "Reasignar" },
   { href: "/admin/casos", etiqueta: "Casos" },
   { href: "/admin/retenidos", etiqueta: "Retenidos" },
+  { href: "/admin/control-previo", etiqueta: "Control previo" },
   { href: "/admin/informes", etiqueta: "Informes" },
   { href: "/admin/exportaciones", etiqueta: "Exportaciones" },
   { href: "/admin/usuarios", etiqueta: "Usuarios" },

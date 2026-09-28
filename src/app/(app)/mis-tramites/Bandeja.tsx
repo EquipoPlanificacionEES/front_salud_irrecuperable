@@ -203,6 +203,21 @@ export function Bandeja() {
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${chip.clase}`}>{chip.texto}</span>
+                    {/*
+                      ADVERTENCIA ADMINISTRATIVA, no un error y no una retención.
+                      Dice lo único que el médico necesita saber ANTES de abrir:
+                      puede trabajarlo y ratificarlo, y la emisión del documento
+                      quedará pendiente de coordinación. En ámbar y sin icono de
+                      alarma, a propósito: un expediente así no tiene nada malo.
+                    */}
+                    {c.classification !== "HOLD" && (c.qa?.finalizationBlockerCount ?? 0) > 0 && (
+                      <span
+                        title="Puedes trabajarlo y ratificarlo. La emisión del documento final quedará pendiente de coordinación."
+                        className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                      >
+                        Advertencia administrativa
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-zinc-600">
                     {c.report?.orientationAssessment ? ORIENTATION_LABEL[c.report.orientationAssessment] : "—"}
