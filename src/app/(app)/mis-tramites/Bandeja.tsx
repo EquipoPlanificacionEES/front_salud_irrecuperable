@@ -210,6 +210,12 @@ export function Bandeja() {
                       quedará pendiente de coordinación. En ámbar y sin icono de
                       alarma, a propósito: un expediente así no tiene nada malo.
                     */}
+                    {/*
+                      `qa` NULO significa «todavía no se ha evaluado», no «no
+                      tiene advertencias». Por eso se pregunta por el número y
+                      no por la ausencia: un expediente sin evaluar no lleva
+                      aviso, pero tampoco se declara limpio en ninguna parte.
+                    */}
                     {c.classification !== "HOLD" && (c.qa?.finalizationBlockerCount ?? 0) > 0 && (
                       <span
                         title="Puedes trabajarlo y ratificarlo. La emisión del documento final quedará pendiente de coordinación."

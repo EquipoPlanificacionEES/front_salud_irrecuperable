@@ -330,7 +330,7 @@ export interface OperationalCase {
    * la emisión del documento esperará a que coordinación valide. NO es un error
    * ni una retención. Opcional para no romper una caché con la forma anterior.
    */
-  qa?: { warningCount: number; finalizationBlockerCount: number };
+  qa?: { warningCount: number; finalizationBlockerCount: number } | null;
   /**
    * El expediente original, cuando existe. La URL la compone el backend. Es lo
    * que permite ofrecer los antecedentes de un caso retenido SIN informe, que no
