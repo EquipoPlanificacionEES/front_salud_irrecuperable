@@ -43,6 +43,48 @@ interface FilaQa {
   findings: Hallazgo[];
 }
 
+/**
+ * QUÉ HACE FALTA PARA DESTRABAR UN HALLAZGO, dicho en la lengua de quien opera.
+ *
+ * El código interno no es una instrucción: `MASTER_COVERAGE_UNVERIFIED` no le
+ * dice a nadie qué botón pulsar. La categoría sí, y sale del propio hallazgo —
+ * nunca de la región ni del expediente.
+ *
+ *   · LIMITACION_FUENTE — el documento no declara algo y no hay nada que releer.
+ *     Lo revisa coordinación y queda escrito.
+ *   · APORTE_MEDICO — falta un dato que el expediente SÍ tiene y que sólo el
+ *     profesional puede leer y consignar. Hay que devolvérselo.
+ *   · TECNICO — prueba de que los antecedentes están mal. No se valida con una
+ *     nota: se corrigen.
+ */
+type Categoria = "LIMITACION_FUENTE" | "APORTE_MEDICO" | "TECNICO";
+
+const CATEGORIA: Record<string, Categoria> = {
+  MASTER_COVERAGE_PARTIAL: "LIMITACION_FUENTE",
+  MASTER_COVERAGE_UNVERIFIED: "LIMITACION_FUENTE",
+  LICENSE_STATES_ALL_UNKNOWN: "APORTE_MEDICO",
+  AUTHORIZED_DAYS_UNAVAILABLE: "APORTE_MEDICO",
+  SOURCE_LICENSE_COUNT_MISMATCH: "TECNICO",
+  MASTER_ROW_WITHOUT_EVIDENCE: "TECNICO",
+  STALE_ANALYSIS: "TECNICO",
+};
+
+/** Un hallazgo que cierra el trabajo médico es técnico, lo diga o no el mapa. */
+export function categoriaDe(f: Pick<Hallazgo, "code" | "blocksMedicalWork">): Categoria {
+  if (f.blocksMedicalWork) return "TECNICO";
+  return CATEGORIA[f.code] ?? "LIMITACION_FUENTE";
+}
+
+/** Qué falta, en una frase. */
+const QUE_FALTA: Record<Categoria, string> = {
+  LIMITACION_FUENTE:
+    "El documento de origen no declara este dato. Releerlo no va a traerlo: hace falta que coordinación confirme que la limitación es de la fuente.",
+  APORTE_MEDICO:
+    "El dato está en el expediente pero el sistema no pudo leerlo. Sólo el profesional puede consignarlo, revisando los antecedentes.",
+  TECNICO:
+    "Hay prueba de que los antecedentes se leyeron mal. No se valida con una nota: hay que corregirlos.",
+};
+
 interface InformeLote {
   version: string;
   totalCases: number;
@@ -57,6 +99,9 @@ export function ControlPrevio() {
   const [informe, setInforme] = useState<InformeLote | null>(null);
   const [abierto, setAbierto] = useState<string | null>(null);
   const [nota, setNota] = useState("");
+  /** El caso cuya devolución se está confirmando, y su motivo. */
+  const [devolviendo, setDevolviendo] = useState<string | null>(null);
+  const [motivo, setMotivo] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -115,6 +160,42 @@ export function ControlPrevio() {
       await cargar();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo registrar la revisión." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * DEVOLVER AL MÉDICO — la otra mitad del control previo.
+   *
+   * Una advertencia que sólo el profesional puede resolver no se valida desde
+   * aquí: se le devuelve el informe para que complete lo que falta. El endpoint
+   * es el de siempre y hace lo de siempre —supera la versión vigente y abre la
+   * siguiente en revisión con el mismo contenido—, así que su pronunciamiento
+   * anterior no se pierde y tendrá que volver a ratificar.
+   *
+   * EL `reportId` NO VIENE EN ESTA PANTALLA, que trabaja por expediente. Se
+   * pide al mismo atajo que usa el resto del frontend cuando sólo tiene el
+   * caso; así esta pantalla no necesita que el listado cambie de forma.
+   */
+  async function devolver(caso: FilaQa) {
+    if (motivo.trim().length < 10) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const informe = await api<{ id: string }>(`/cases/${caso.caseId}/report`);
+      await api(`/reports/${informe.id}/return-to-doctor`, { json: { reason: motivo.trim() } });
+      setMsg({
+        ok: true,
+        texto:
+          `${caso.externalCaseId} volvió al médico. Cuando complete las cifras y ratifique de nuevo, ` +
+          "el documento se emitirá si no queda ninguna otra advertencia.",
+      });
+      setMotivo("");
+      setDevolviendo(null);
+      await cargar();
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo devolver el informe." });
     } finally {
       setBusy(false);
     }
@@ -223,6 +304,13 @@ export function ControlPrevio() {
                             </p>
                           )}
 
+                          {/* QUÉ FALTA, antes de ofrecer ningún botón. */}
+                          {f.blocksFinalization && f.resolvedAt === null && (
+                            <p className="mt-2 text-xs text-zinc-600">
+                              {QUE_FALTA[categoriaDe(f)]}
+                            </p>
+                          )}
+
                           {/*
                             UN BLOQUEO DEL TRABAJO MÉDICO NO SE LEVANTA ESCRIBIENDO.
                             Es una prueba de que los antecedentes están mal, y lo que
@@ -234,27 +322,81 @@ export function ControlPrevio() {
                             </p>
                           )}
 
-                          {f.blocksFinalization && f.resolvedAt === null && (
-                            <div className="mt-3 space-y-2">
-                              <Campo
-                                label="Qué revisaste"
-                                hint="Obligatorio. Quien lea esto dentro de un año necesita saber qué se miró."
-                              >
-                                <Textarea
-                                  rows={2}
-                                  value={nota}
-                                  onChange={(e) => setNota(e.target.value)}
-                                  placeholder="Confirmado con el proveedor: el listado maestro no imprime el total de 2025."
-                                />
-                              </Campo>
-                              <Btn
-                                onClick={() => void resolver(c, f)}
-                                disabled={busy || nota.trim().length < 10}
-                              >
-                                Marcar como revisada
-                              </Btn>
-                            </div>
-                          )}
+                          {/*
+                            LIMITACIÓN DE LA FUENTE. La revisa coordinación y queda
+                            escrita; si era la última, el documento sale solo.
+                          */}
+                          {f.blocksFinalization &&
+                            f.resolvedAt === null &&
+                            categoriaDe(f) === "LIMITACION_FUENTE" && (
+                              <div className="mt-3 space-y-2" data-testid="accion-limitacion">
+                                <Campo
+                                  label="Qué revisaste"
+                                  hint="Obligatorio. Quien lea esto dentro de un año necesita saber qué se miró."
+                                >
+                                  <Textarea
+                                    rows={2}
+                                    value={nota}
+                                    onChange={(e) => setNota(e.target.value)}
+                                    placeholder="Confirmado con el proveedor: el listado maestro no imprime el total de 2025."
+                                  />
+                                </Campo>
+                                <Btn
+                                  onClick={() => void resolver(c, f)}
+                                  disabled={busy || nota.trim().length < 10}
+                                >
+                                  Validar limitación de fuente
+                                </Btn>
+                              </div>
+                            )}
+
+                          {/*
+                            APORTE DEL PROFESIONAL. No se valida: se le devuelve.
+                            Volverá a ratificar, porque su decisión puede cambiar
+                            con las cifras que él mismo consigne.
+                          */}
+                          {f.blocksFinalization &&
+                            f.resolvedAt === null &&
+                            categoriaDe(f) === "APORTE_MEDICO" && (
+                              <div className="mt-3 space-y-2" data-testid="accion-devolver">
+                                {devolviendo === c.caseId ? (
+                                  <>
+                                    <Campo
+                                      label="Motivo de devolución"
+                                      hint="Lo va a leer el médico y queda en la auditoría. Obligatorio."
+                                    >
+                                      <Textarea
+                                        rows={2}
+                                        value={motivo}
+                                        onChange={(e) => setMotivo(e.target.value)}
+                                        placeholder="Completar manualmente las cifras de la Sección II que el sistema no pudo determinar a partir de los antecedentes disponibles."
+                                      />
+                                    </Campo>
+                                    <div className="flex gap-2">
+                                      <Btn
+                                        onClick={() => void devolver(c)}
+                                        disabled={busy || motivo.trim().length < 10}
+                                      >
+                                        Confirmar devolución
+                                      </Btn>
+                                      <Btn
+                                        variante="ghost"
+                                        onClick={() => {
+                                          setDevolviendo(null);
+                                          setMotivo("");
+                                        }}
+                                      >
+                                        Cancelar
+                                      </Btn>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <Btn onClick={() => setDevolviendo(c.caseId)} disabled={busy}>
+                                    Devolver al médico
+                                  </Btn>
+                                )}
+                              </div>
+                            )}
                         </li>
                       ))}
                     </ul>
