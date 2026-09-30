@@ -69,6 +69,24 @@ const CATEGORIA: Record<string, Categoria> = {
   STALE_ANALYSIS: "TECNICO",
 };
 
+/**
+ * DE LO TÉCNICO, LO QUE DE VERDAD SE ARREGLA RELEYENDO.
+ *
+ * No todo defecto se cura volviendo a leer: una identidad sin resolver seguirá
+ * sin resolverse por mucho que se repita la extracción. La lista es la MISMA
+ * que aplica el servidor (`findingIsTechnical`), y ofrecer aquí un botón que
+ * allí se rechazaría sería prometer una salida que no existe.
+ */
+const RELEIBLE = new Set([
+  "SOURCE_LICENSE_COUNT_MISMATCH",
+  "MASTER_ROW_WITHOUT_EVIDENCE",
+  "STALE_ANALYSIS",
+]);
+
+export function seArreglaReleyendo(code: string): boolean {
+  return RELEIBLE.has(code);
+}
+
 /** Un hallazgo que cierra el trabajo médico es técnico, lo diga o no el mapa. */
 export function categoriaDe(f: Pick<Hallazgo, "code" | "blocksMedicalWork">): Categoria {
   if (f.blocksMedicalWork) return "TECNICO";
@@ -82,7 +100,7 @@ const QUE_FALTA: Record<Categoria, string> = {
   APORTE_MEDICO:
     "El dato está en el expediente pero el sistema no pudo leerlo. Sólo el profesional puede consignarlo, revisando los antecedentes.",
   TECNICO:
-    "Hay prueba de que los antecedentes se leyeron mal. No se valida con una nota: hay que corregirlos.",
+    "Hay prueba de que los antecedentes se leyeron mal. No se valida con una nota: hay que volver a leerlos.",
 };
 
 interface InformeLote {
@@ -102,6 +120,8 @@ export function ControlPrevio() {
   /** El caso cuya devolución se está confirmando, y su motivo. */
   const [devolviendo, setDevolviendo] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
+  /** El hallazgo cuyo reproceso se está confirmando. */
+  const [reprocesando, setReprocesando] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -196,6 +216,34 @@ export function ControlPrevio() {
       await cargar();
     } catch (e) {
       setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo devolver el informe." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * RELEER UN EXPEDIENTE MAL LEÍDO.
+   *
+   * La tercera salida: ni se valida ni se devuelve, se vuelve a leer. El
+   * servidor encola el MISMO reproceso protegido de siempre y rechaza el
+   * expediente que tenga trabajo médico, así que aquí no hay que decidir nada:
+   * basta con ofrecerlo donde el hallazgo lo admite y contar lo que respondió.
+   */
+  async function reprocesar(caso: FilaQa, hallazgo: Hallazgo) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api(`/admin/cases/${caso.caseId}/qa/${hallazgo.findingKey}/reprocess`, { json: {} });
+      setMsg({
+        ok: true,
+        texto:
+          `${caso.externalCaseId} se está releyendo. Cuando termine, vuelve a revisar la semana: ` +
+          "si la advertencia era de lectura, habrá desaparecido.",
+      });
+      setReprocesando(null);
+      await cargar();
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo reprocesar." });
     } finally {
       setBusy(false);
     }
@@ -312,11 +360,43 @@ export function ControlPrevio() {
                           )}
 
                           {/*
+                            DEFECTO DE LECTURA. Se vuelve a leer; el servidor
+                            rechaza el expediente que tenga trabajo médico.
+                          */}
+                          {f.blocksFinalization &&
+                            f.resolvedAt === null &&
+                            seArreglaReleyendo(f.code) && (
+                              <div className="mt-3 space-y-2" data-testid="accion-reprocesar">
+                                {reprocesando === f.findingKey ? (
+                                  <>
+                                    <p className="text-xs text-zinc-600">
+                                      Se volverán a leer los antecedentes de este expediente. No se
+                                      modifica el trabajo del profesional: si hubiera alguno, el
+                                      reproceso se rechaza.
+                                    </p>
+                                    <div className="flex gap-2">
+                                      <Btn onClick={() => void reprocesar(c, f)} disabled={busy}>
+                                        {busy ? "Reprocesando…" : "Confirmar reproceso"}
+                                      </Btn>
+                                      <Btn variante="ghost" onClick={() => setReprocesando(null)}>
+                                        Cancelar
+                                      </Btn>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <Btn onClick={() => setReprocesando(f.findingKey)} disabled={busy}>
+                                    Reprocesar
+                                  </Btn>
+                                )}
+                              </div>
+                            )}
+
+                          {/*
                             UN BLOQUEO DEL TRABAJO MÉDICO NO SE LEVANTA ESCRIBIENDO.
                             Es una prueba de que los antecedentes están mal, y lo que
                             corresponde es corregirlos, no dar fe de ellos.
                           */}
-                          {f.blocksMedicalWork && (
+                          {f.blocksMedicalWork && !seArreglaReleyendo(f.code) && (
                             <p className="mt-2 text-xs text-zinc-500">
                               Esto no se resuelve desde aquí: hay que corregir los antecedentes.
                             </p>
