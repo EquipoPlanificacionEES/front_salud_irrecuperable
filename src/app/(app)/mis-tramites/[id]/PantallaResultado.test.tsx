@@ -1565,4 +1565,83 @@ describe("PantallaResultado · informe firmado en Word y PDF", () => {
     await pintarCon({ workflowStatus: "READY_FOR_REVIEW", currentSignedDocuments: null }, false);
     expect(screen.queryByRole("link", { name: /Descargar (Word|PDF)/ })).toBeNull();
   });
+
+  /**
+   * RATIFICADO Y SIN DOCUMENTO: el estado que la pantalla no contaba.
+   *
+   * La explicación vivía en la barra de acciones, que se retira al ratificar.
+   * Quien abría el expediente después veía un caso firmado, ningún botón y
+   * ninguna razón. Javiera lo reportó como «desaparecieron las descargas».
+   */
+  const RATIFICADO = [
+    { id: "r1", decision: "APPROVED" as const, comments: null, createdAt: "2026-09-29T10:00:00.000Z" },
+  ];
+
+  it("G · ratificado sin documento: se explica por qué no hay descargas", async () => {
+    await pintarCon(
+      {
+        workflowStatus: "APPROVED",
+        reviews: RATIFICADO,
+        finalArtifact: null,
+        currentSignedDocuments: null,
+      },
+      false,
+    );
+    expect(screen.getByTestId("panel-emision-pendiente")).toBeDefined();
+    expect(screen.getByTestId("emision-pendiente")).toBeDefined();
+    // Se dice en los dos sitios a propósito: la etiqueta donde estarían las
+    // descargas, y el panel con la explicación completa.
+    expect(screen.getAllByText(/documento firmado pendiente de emisión/i)).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: /Descargar (Word|PDF)/ })).toBeNull();
+  });
+
+  it("H · ratificado sin documento: enumera las advertencias que lo retienen", async () => {
+    const base = informe({ canRequestChanges: false, canApprove: false, canDownloadSigned: false });
+    vi.stubGlobal(
+      "fetch",
+      fetchDevolviendo({
+        ...base,
+        workflowStatus: "APPROVED",
+        reviews: RATIFICADO,
+        finalArtifact: null,
+        currentSignedDocuments: null,
+        capabilities: {
+          ...base.capabilities,
+          finalDocumentDeferred: true,
+          administrativeWarnings: [
+            {
+              code: "LICENSE_STATES_ALL_UNKNOWN",
+              statement: "No se pudo interpretar el estado administrativo de ninguna licencia.",
+              evidence: "22 licencia(s), 0 con estado legible",
+              blocksFinalDocument: true,
+            },
+            {
+              code: "DOCUMENT_COVERAGE_INCOMPLETE",
+              statement: "El expediente no trae todos los antecedentes que la pauta considera.",
+              evidence: "2 documento(s) que la pauta espera no constan",
+              blocksFinalDocument: false,
+            },
+          ],
+        },
+      }),
+    );
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    // Sólo la que RETIENE el documento. La otra consta en su propio sitio.
+    expect(screen.getByText(/No se pudo interpretar el estado administrativo/)).toBeDefined();
+    expect(screen.queryByText(/no trae todos los antecedentes/)).toBeNull();
+  });
+
+  it("I · firmado y con documento: ni rastro del aviso de emisión pendiente", async () => {
+    await pintarCon({ reviews: RATIFICADO, currentSignedDocuments: docs(PROPIA, 1, "READY") }, true);
+    expect(screen.queryByTestId("panel-emision-pendiente")).toBeNull();
+    expect(screen.getByRole("link", { name: "Descargar Word" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Descargar PDF" })).toBeDefined();
+  });
+
+  it("J · sin ratificar y sin documento: no se anuncia una emisión que nadie pidió", async () => {
+    await pintarCon({ workflowStatus: "READY_FOR_REVIEW", reviews: [], currentSignedDocuments: null }, false);
+    expect(screen.queryByTestId("panel-emision-pendiente")).toBeNull();
+  });
 });

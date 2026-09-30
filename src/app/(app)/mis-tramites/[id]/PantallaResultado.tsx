@@ -704,6 +704,23 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
    */
   const puedeRatificar = cap.canApprove || cap.canResolveAndApprove;
   const puedeActuar = puedeRatificar || cap.canRequestChanges;
+  /**
+   * RATIFICADO Y SIN DOCUMENTO TODAVÍA.
+   *
+   * Es un estado legítimo del circuito —el pronunciamiento queda registrado y
+   * la emisión espera a que coordinación valide los antecedentes— y hasta ahora
+   * era el único que la pantalla no contaba. La explicación vivía dentro de la
+   * barra de acciones, que se retira al ratificar: quien abría el expediente
+   * después veía un caso firmado, ningún botón de descarga y ni una palabra
+   * sobre por qué. No hay nada que descargar, pero sí mucho que decir.
+   */
+  const ratificado = rep.reviews.some((r) => r.decision === "APPROVED");
+  const sinDocumentoFirmado = rep.currentSignedDocuments
+    ? false
+    : rep.currentSignedDocuments === null || !rep.finalArtifact;
+  const emisionPendiente = ratificado && sinDocumentoFirmado;
+  /** Las que de verdad retienen el documento, no todas las advertencias. */
+  const avisosQueRetienen = (cap.administrativeWarnings ?? []).filter((a) => a.blocksFinalDocument);
   const censo = censarLicencias(rep.licenses);
   /**
    * LA ÚNICA SEÑAL DE QUE ESTE EXPEDIENTE PIDE MÁS LECTURA es que el botón de
@@ -810,8 +827,51 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               </a>
             )
           )}
+          {/* EN EL SITIO DONDE ESTARÍAN LAS DESCARGAS, POR QUÉ NO ESTÁN. */}
+          {emisionPendiente && (
+            <span
+              data-testid="emision-pendiente"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900"
+            >
+              Documento firmado pendiente de emisión
+            </span>
+          )}
         </div>
       </div>
+
+      {/*
+        RATIFICADO, PERO EL DOCUMENTO AÚN NO SALE.
+        Se dice AQUÍ y no en la barra de acciones porque esa barra se retira al
+        ratificar, y era justo después de ratificar cuando hacía falta leerlo.
+        No hay botón que ofrecer —el documento no existe todavía— así que lo
+        que corresponde es explicar qué falta y quién lo destraba.
+      */}
+      {emisionPendiente && (
+        <div
+          role="note"
+          data-testid="panel-emision-pendiente"
+          className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <p className="font-semibold">Informe ratificado · documento firmado pendiente de emisión</p>
+          <p className="mt-1">
+            Tu pronunciamiento quedó registrado. El documento firmado todavía no se emite porque
+            quedan antecedentes administrativos por validar.
+          </p>
+          {avisosQueRetienen.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {avisosQueRetienen.map((a) => (
+                <li key={a.code}>
+                  {a.statement} <span className="text-amber-800">({a.evidence})</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2">
+            Se emitirá automáticamente cuando coordinación los valide, y entonces aparecerán aquí
+            los botones para descargarlo en Word y en PDF.
+          </p>
+        </div>
+      )}
 
       {/* LOS ANTECEDENTES, CUANDO SON VARIOS. Con un único archivo no aparece
           nada: el botón «Ver antecedentes» de arriba sigue siendo lo correcto.
