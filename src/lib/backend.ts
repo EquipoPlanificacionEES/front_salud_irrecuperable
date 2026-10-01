@@ -343,6 +343,18 @@ export interface OperationalCase {
     blocksMedicalWork?: boolean;
   } | null;
   /**
+   * SI TIENE SENTIDO OFRECER UN REPROCESO. Prefiltro del servidor, NO
+   * autorización: el endpoint vuelve a comprobarlo todo y puede rechazar igual.
+   *
+   * Es `false` en cuanto hay cualquier rastro de trabajo humano —una revisión, un
+   * documento final, una corrección, un peritaje— o una retención abierta. Sirve
+   * para no ofrecer un botón condenado al 422: un expediente con informe firmado
+   * mostraba «Reprocesar» y el servidor decía no.
+   *
+   * Opcional para no romper una caché con la forma anterior.
+   */
+  reprocessEligible?: boolean;
+  /**
    * El expediente original, cuando existe. La URL la compone el backend. Es lo
    * que permite ofrecer los antecedentes de un caso retenido SIN informe, que no
    * tiene ninguna otra vía para hacerlo.

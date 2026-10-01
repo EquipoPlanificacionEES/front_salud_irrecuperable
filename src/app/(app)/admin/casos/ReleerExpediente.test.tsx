@@ -48,17 +48,27 @@ function caso(extra: Partial<OperationalCase> = {}): OperationalCase {
   } as OperationalCase;
 }
 
-const MAL_LEIDO = caso({ qa: { warningCount: 2, finalizationBlockerCount: 1, blocksMedicalWork: true } });
+/** Como 33361146: mal leído, sin trabajo médico encima. */
+const MAL_LEIDO = caso({
+  qa: { warningCount: 2, finalizationBlockerCount: 1, blocksMedicalWork: true },
+  reprocessEligible: true,
+});
 const SOLO_OBSERVACION = caso({
   caseId: "00000000-0000-4000-8000-0000000000c2",
   externalCaseId: "33346702",
   qa: { warningCount: 1, finalizationBlockerCount: 1, blocksMedicalWork: false },
+  reprocessEligible: true,
 });
+/**
+ * Como 33754938: mal leído, PERO con una v2 firmada y una corrección abierta. El
+ * servidor lo rechazaría, así que no se ofrece.
+ */
 const FIRMADO = caso({
   caseId: "00000000-0000-4000-8000-0000000000c3",
   externalCaseId: "33754938",
   classification: "SIGNED",
   qa: { warningCount: 3, finalizationBlockerCount: 2, blocksMedicalWork: true },
+  reprocessEligible: false,
 });
 
 const HALLAZGO_RELEIBLE = {
@@ -177,29 +187,20 @@ describe("Administración → Casos · releer un expediente mal leído", () => {
     expect(screen.queryAllByRole("button", { name: "Reprocesar" })).toHaveLength(0);
   });
 
-  it("C · un expediente FIRMADO: el servidor lo rechaza y se lee en cristiano", async () => {
-    await pintar({
-      casos: [FIRMADO],
-      findings: [HALLAZGO_RELEIBLE],
-      reprocess: () => ({
-        status: 422,
-        body: {
-          error: {
-            code: "DOMAIN_RULE_VIOLATED",
-            message: "Este expediente ya tiene un informe firmado emitido.",
-            details: [],
-          },
-        },
-      }),
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Reprocesar" }));
-    await waitFor(() => expect(screen.getByTestId("releer-expediente")).toBeDefined());
+  /**
+   * B/C/D · LO QUE EL SERVIDOR RECHAZARÍA NO SE OFRECE. `reprocessEligible` es
+   * `false` en cuanto hay cualquier rastro de trabajo humano —ratificación,
+   * documento firmado, corrección, peritaje— o una retención abierta. Antes el
+   * botón aparecía y el endpoint respondía 422: seguro, y confuso de usar.
+   */
+  it("B/C/D · mal leído PERO con trabajo médico encima: el botón no aparece", async () => {
+    await pintar({ casos: [FIRMADO] });
+    expect(screen.getByText("33754938")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Reprocesar" })).toBeNull();
+  });
 
-    const botones = screen.getAllByRole("button", { name: "Reprocesar" });
-    fireEvent.click(botones[botones.length - 1] as HTMLElement);
-
-    await waitFor(() =>
-      expect(screen.getByText(/ya tiene un informe firmado emitido/)).toBeDefined(),
-    );
+  it("no basta con ser elegible: si se puede trabajar, releerlo no viene al caso", async () => {
+    await pintar({ casos: [SOLO_OBSERVACION] });
+    expect(screen.queryByRole("button", { name: "Reprocesar" })).toBeNull();
   });
 });

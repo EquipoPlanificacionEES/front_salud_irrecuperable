@@ -251,13 +251,18 @@ export function Casos() {
                 </>
               )}
               {/*
-                RELEER EL EXPEDIENTE. Sólo cuando el control previo dice que NO se
-                puede trabajar: eso significa que hay prueba de que los
-                antecedentes se leyeron mal, y es lo único que se arregla
-                releyéndolos. Una observación que el médico puede valorar no
-                ofrece este botón, porque releer no la cambiaría.
+                RELEER EL EXPEDIENTE. Dos condiciones, y cada una descarta algo
+                distinto:
+                  · `blocksMedicalWork` — hay prueba de que los antecedentes se
+                    leyeron mal. Una observación que el médico puede valorar no
+                    ofrece este botón, porque releer no la cambiaría.
+                  · `reprocessEligible` — el servidor no va a rechazarlo. Sin esto,
+                    un expediente con informe firmado mostraba «Reprocesar» y el
+                    endpoint respondía 422: seguro y confuso a la vez.
+                Es el PREFILTRO del servidor, no una copia de su lógica: el
+                endpoint sigue comprobándolo todo, y puede decir no.
               */}
-              {c.qa?.blocksMedicalWork && releyendo !== c.caseId && (
+              {c.qa?.blocksMedicalWork && c.reprocessEligible && releyendo !== c.caseId && (
                 <Btn
                   variante="ghost"
                   className="px-2.5 py-1 text-xs"
