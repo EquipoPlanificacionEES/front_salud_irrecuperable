@@ -3,16 +3,27 @@
 import { usePathname } from "next/navigation";
 import { EnlaceNav } from "@/components/EnlaceNav";
 
-// Sub-navegación del área de administración. Cada pestaña consume el backend real
-// (/api/v1/admin/*, /api/v1/reports, /api/v1/exports).
-const TABS = [
+/**
+ * Sub-navegación del área de administración. Cada pestaña consume el backend real
+ * (/api/v1/admin/*, /api/v1/reports, /api/v1/exports).
+ *
+ * CONTROL PREVIO SALIÓ DE AQUÍ en octubre de 2026, y no porque sobre la pantalla:
+ * dejó de ser un paso del flujo. Mientras una advertencia administrativa retenía
+ * el documento, alguien tenía que entrar a validarla para que un informe ya
+ * ratificado pudiera cerrarse. Esa regla se retiró —ratificar emite—, así que la
+ * pantalla ya no es una parada obligatoria.
+ *
+ * La ruta, los endpoints y el historial de QA SIGUEN EXISTIENDO: se usan para
+ * auditoría y soporte técnico, y `/admin/control-previo` responde si se escribe.
+ * Lo que no hace es pedirle a coordinación que pase por ahí cada semana.
+ */
+export const TABS = [
   { href: "/admin/dashboard", etiqueta: "Dashboard" },
   { href: "/admin/semanas", etiqueta: "Semanas" },
   { href: "/admin/asignaciones", etiqueta: "Asignaciones" },
   { href: "/admin/reasignacion", etiqueta: "Reasignar" },
   { href: "/admin/casos", etiqueta: "Casos" },
   { href: "/admin/retenidos", etiqueta: "Retenidos" },
-  { href: "/admin/control-previo", etiqueta: "Control previo" },
   { href: "/admin/informes", etiqueta: "Informes" },
   { href: "/admin/exportaciones", etiqueta: "Exportaciones" },
   { href: "/admin/usuarios", etiqueta: "Usuarios" },

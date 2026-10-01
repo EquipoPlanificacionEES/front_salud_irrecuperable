@@ -24,7 +24,16 @@ import { Aviso, Chip, FilaVacia, Select, Tabla, workflowTono } from "../ui";
 
 const ORDEN: ReportWorkflowStatus[] = ["READY_FOR_REVIEW", "CHANGES_REQUESTED", "APPROVED", "SIGNING", "SIGNED", "SIGNING_FAILED"];
 const ORIENTACIONES: Orientation[] = ["RECOVERABLE", "IRRECOVERABLE", "INDETERMINATE"];
-const COLUMNAS = ["Nº trámite", "Semana", "Médico", "Versión", "Estado", "Orientación", ""];
+/**
+ * LA TABLA DICE LO QUE SE OPERA CON ELLA.
+ *
+ * Salieron tres columnas —médico, versión y orientación— y no porque el dato
+ * estorbe: estorbaba su ANCHO. Esta tabla se usa para encontrar un trámite y
+ * bajar su documento, y con siete columnas no cabía en un portátil sin scroll
+ * horizontal. El médico asignado y la orientación siguen estando, en el
+ * fundamento que se despliega por fila; la versión vive en el informe.
+ */
+const COLUMNAS = ["Nº trámite", "Semana", "Estado", "Documentos"];
 
 export function Informes() {
   const [fBatch, setFBatch] = useState("");
@@ -41,8 +50,6 @@ export function Informes() {
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
   const [accion, setAccion] = useState<{ ok: boolean; texto: string } | null>(null);
-  /** Qué fila tiene desplegado el historial de versiones. */
-  const [historial, setHistorial] = useState<string | null>(null);
   const invalidarCorreccion = useInvalidarCorreccion();
 
   /**
@@ -237,13 +244,8 @@ export function Informes() {
             <tr className="border-t border-[var(--atm-linea)] align-top hover:bg-[var(--atm-fondo)]">
               <td className="px-4 py-2.5 font-mono text-xs text-zinc-800">{r.externalCaseId}</td>
               <td className="px-4 py-2.5 text-zinc-600">{r.batch?.name ?? "—"}</td>
-              <td className="min-w-44 px-4 py-2.5 text-zinc-600">{r.doctor?.fullName ?? "—"}</td>
-              <td className="px-4 py-2.5 text-zinc-600">v{r.version}</td>
               <td className="px-4 py-2.5">
                 <Chip tono={workflowTono(r.workflowStatus)}>{WORKFLOW_LABEL[r.workflowStatus]}</Chip>
-              </td>
-              <td className="px-4 py-2.5">
-                <OrientacionCelda assessment={r.orientationAssessment} reason={r.orientationReason} />
               </td>
               <td className="px-4 py-2.5 text-right whitespace-nowrap">
                 <button
@@ -282,14 +284,6 @@ export function Informes() {
                     </a>
                   )
                 )}
-                <button
-                  type="button"
-                  aria-expanded={historial === r.reportId}
-                  onClick={() => setHistorial((v) => (v === r.reportId ? null : r.reportId))}
-                  className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
-                >
-                  Historial
-                </button>
                 {/* Corregir un informe FIRMADO exige habilitarlo antes: el
                     médico no puede reabrirlo por su cuenta. */}
                 {r.signedAt && (
@@ -310,6 +304,11 @@ export function Informes() {
             {abierto === r.reportId && (
               <tr className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
                 <td colSpan={COLUMNAS.length} className="px-4 py-3">
+                  {/* Lo que salió de la tabla por ANCHO sigue aquí: quitarlo de la
+                      cuadrícula no debe hacerlo inaccesible. */}
+                  <p className="mb-2 text-xs text-zinc-500">
+                    Versión v{r.version} · Médico: {r.doctor?.fullName ?? "sin asignación vigente"}
+                  </p>
                   <OrientationReviewCard reportId={r.reportId} enabled />
                 </td>
               </tr>
@@ -364,102 +363,9 @@ export function Informes() {
                 </td>
               </tr>
             )}
-            {historial === r.reportId && (
-              <tr className="border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)]">
-                <td colSpan={COLUMNAS.length} className="px-4 py-3">
-                  <HistorialVersiones reportId={r.reportId} />
-                </td>
-              </tr>
-            )}
           </Fragment>
         ))}
       </Tabla>
     </div>
-  );
-}
-
-/**
- * EL HISTORIAL DE VERSIONES DEL EXPEDIENTE.
- *
- * Una versión firmada que fue reemplazada NO desaparece: sigue aquí, con sus
- * documentos descargables. Es lo que permite explicar, meses después, por qué
- * hay dos informes firmados del mismo trámite y cuál vale.
- */
-function HistorialVersiones({ reportId }: { reportId: string }) {
-  const { data, isPending, error } = useVersionesInforme(reportId, true);
-  if (isPending) return <p className="text-xs text-zinc-500">Cargando historial…</p>;
-  if (error || !data) return <p className="text-xs text-[var(--atm-mal)]">No se pudo cargar el historial.</p>;
-
-  return (
-    <table className="w-full text-xs">
-      <thead className="text-zinc-500">
-        <tr>
-          <th className="py-1 text-left font-medium">Versión</th>
-          <th className="py-1 text-left font-medium">Estado</th>
-          <th className="py-1 text-left font-medium">Pronunciamiento</th>
-          <th className="py-1 text-left font-medium">Ratificada</th>
-          <th className="py-1 text-left font-medium">Firmada</th>
-          <th className="py-1 text-left font-medium">Médico</th>
-          <th className="py-1 text-left font-medium">Motivo de corrección</th>
-          <th className="py-1 text-right font-medium">Documentos</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.versions.map((v) => (
-          <tr key={v.reportSnapshotId} className="border-t border-[var(--atm-linea)]">
-            <td className="py-1.5 text-zinc-700">v{v.version}</td>
-            <td className="py-1.5">
-              {/* Una corrección abierta todavía no reemplaza a nadie: no está firmada. */}
-              <Chip tono={v.current ? "ok" : "neutral"}>
-                {v.current ? "Vigente" : v.signedAt ? "Reemplazada" : "Sin firmar"}
-              </Chip>
-            </td>
-            <td className="py-1.5 text-zinc-600">{v.determination ?? "—"}</td>
-            <td className="py-1.5 text-zinc-600">{v.approvedAt?.slice(0, 10) ?? "—"}</td>
-            <td className="py-1.5 text-zinc-600">{v.signedAt?.slice(0, 10) ?? "—"}</td>
-            <td className="py-1.5 text-zinc-600">{v.doctorName ?? "—"}</td>
-            <td className="max-w-64 truncate py-1.5 text-zinc-600" title={v.correctionReason ?? undefined}>
-              {v.correctionReason ?? "—"}
-            </td>
-            <td className="py-1.5 text-right whitespace-nowrap">
-              {/* Los documentos de ESTA versión: una histórica baja la histórica,
-                  nunca la vigente. Una versión sin firmar no ofrece nada. */}
-              {v.signedDocuments !== undefined ? (
-                v.signedDocuments ? (
-                  <DescargasFirmadas documentos={v.signedDocuments} compacto conVersion />
-                ) : (
-                  <span className="text-zinc-400">—</span>
-                )
-              ) : (
-                <>
-              {/* API anterior: la URL la compone el backend igualmente. */}
-              {v.finalArtifact && (
-                <a
-                  href={v.finalArtifact.downloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg border border-[var(--atm-linea)] px-2 py-0.5 text-[var(--atm-azul)] hover:bg-blue-50"
-                >
-                  Word
-                </a>
-              )}
-              {v.finalPdfArtifact && (
-                <a
-                  href={v.finalPdfArtifact.downloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="ml-1 rounded-lg border border-[var(--atm-linea)] px-2 py-0.5 text-[var(--atm-azul)] hover:bg-blue-50"
-                >
-                  PDF
-                </a>
-              )}
-              {!v.finalArtifact && !v.finalPdfArtifact && <span className="text-zinc-400">—</span>}
-                </>
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }

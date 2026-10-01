@@ -206,30 +206,6 @@ describe("Informes · corrección de un informe firmado", () => {
     expect(cuerpo.reason).toContain("Ratificación realizada por error");
   });
 
-  it("el historial muestra la versión reemplazada junto a la vigente, con su documento", async () => {
-    vi.stubGlobal("fetch", backendFirmado());
-    pintarConQuery(<Informes />);
-    await waitFor(() => expect(screen.getByText("33315064")).toBeDefined());
-
-    fireEvent.click(screen.getByRole("button", { name: "Historial" }));
-    await waitFor(() => expect(screen.getByText("Vigente")).toBeDefined());
-    expect(screen.getByText("Reemplazada")).toBeDefined();
-    expect(screen.getByText("Sin firmar")).toBeDefined();
-    expect(screen.getByText(/Ratificación realizada por error/)).toBeDefined();
-    // D · la versión reemplazada conserva SUS documentos: la historia no se borra.
-    expect(screen.getByRole("link", { name: "Descargar Word de la versión 1" }).getAttribute("href")).toBe(
-      `/api/v1/reports/${FIRMADO.reportId}/signed-document?format=docx`,
-    );
-    expect(screen.getByRole("link", { name: "Descargar PDF de la versión 1" }).getAttribute("href")).toBe(
-      `/api/v1/reports/${FIRMADO.reportId}/signed-document?format=pdf`,
-    );
-    // E · la vigente, los suyos; su PDF falló y se dice, sin enlace.
-    expect(screen.getByRole("link", { name: "Descargar Word de la versión 2" }).getAttribute("href")).toContain(V2);
-    expect(screen.queryByRole("link", { name: "Descargar PDF de la versión 2" })).toBeNull();
-    expect(screen.getByText("PDF no disponible")).toBeDefined();
-    // Una versión sin firmar no ofrece descargas finales inexistentes.
-    expect(screen.queryByRole("link", { name: /versión 3/ })).toBeNull();
-  });
 });
 
 /**
@@ -311,14 +287,16 @@ describe("Informes · descarga del informe firmado en Word y PDF", () => {
 });
 
 describe("Informes · orientación IA", () => {
-  it("muestra el motivo corto, la revisión médica y abre el fundamento a demanda", async () => {
+  /**
+   * La columna de orientación salió de la tabla por ANCHO, no porque el dato
+   * estorbe: sigue a un clic, en el fundamento, y se pide sólo cuando se abre.
+   */
+  it("el fundamento se pide a demanda y trae la orientación y su motivo", async () => {
     const fetchMock = backend([INDETERMINADA, RECUPERABLE]);
     vi.stubGlobal("fetch", fetchMock);
     pintarConQuery(<Informes />);
 
     await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
-    expect(screen.getAllByText("Falta evolución y pronóstico").length).toBeGreaterThan(0);
-    expect(screen.getByText("Requiere revisión médica")).toBeDefined();
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/orientation-review"))).toBe(false);
 
     const botones = screen.getAllByRole("button", { name: "Ver fundamento" });
@@ -396,5 +374,58 @@ describe("Informes · orientación IA", () => {
     });
     expect(screen.queryByText("34200002")).toBeNull();
     expect(screen.getByText("34200001")).toBeDefined();
+  });
+});
+
+
+/**
+ * LA TABLA MÁS LIMPIA — octubre de 2026.
+ *
+ * Salieron tres columnas y un botón. No porque el dato estorbe: estorbaba su
+ * ANCHO. Con siete columnas la tabla no cabía en un portátil sin scroll
+ * horizontal, y lo que se hace con ella es encontrar un trámite y bajar su
+ * documento. Lo retirado sigue alcanzable a un clic.
+ */
+describe("Informes · la tabla sólo lleva lo operacional", () => {
+  const encabezados = () => screen.getAllByRole("columnheader").map((th) => th.textContent?.trim());
+
+  it("J · la tabla NO tiene columna Médico", async () => {
+    vi.stubGlobal("fetch", backend([INDETERMINADA]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
+    expect(encabezados()).not.toContain("Médico");
+  });
+
+  it("K · la tabla NO tiene columnas Versión ni Orientación", async () => {
+    vi.stubGlobal("fetch", backend([INDETERMINADA]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
+    expect(encabezados()).not.toContain("Versión");
+    expect(encabezados()).not.toContain("Orientación");
+  });
+
+  it("L · la tabla NO tiene botón Historial", async () => {
+    vi.stubGlobal("fetch", backend([INDETERMINADA]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
+    expect(screen.queryByRole("button", { name: "Historial" })).toBeNull();
+  });
+
+  it("queda compacta: cuatro columnas, y la última son los documentos", async () => {
+    vi.stubGlobal("fetch", backend([INDETERMINADA]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
+    expect(encabezados()).toEqual(["Nº trámite", "Semana", "Estado", "Documentos"]);
+  });
+
+  /** Lo retirado de la cuadrícula NO desaparece de la pantalla. */
+  it("el médico y la versión siguen alcanzables en el fundamento", async () => {
+    vi.stubGlobal("fetch", backend([INDETERMINADA]));
+    pintarConQuery(<Informes />);
+    await waitFor(() => expect(screen.getByText("34200001")).toBeDefined());
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Ver fundamento" })[0] as HTMLElement);
+    await waitFor(() => expect(screen.getByText(/Médico:/)).toBeDefined());
+    expect(screen.getByText(/Versión v/)).toBeDefined();
   });
 });
