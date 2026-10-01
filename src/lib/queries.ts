@@ -449,6 +449,19 @@ export function invalidacionesDe(qc: QueryClient) {
         inv(queryKeys.cases.report(caseId)),
         inv(queryKeys.doctor.inbox()),
       ]),
+    /**
+     * El expediente se vuelve a leer. Caduca lo mismo que una rectificación —el
+     * listado, los informes, la bandeja— porque un reproceso puede cambiar el
+     * análisis, el control previo y, con ellos, en qué pestaña cae el caso.
+     */
+    expedienteReprocesado: (caseId: string) =>
+      Promise.all([
+        inv(["admin", "cases"]),
+        inv(["reports"]),
+        inv(queryKeys.admin.holds()),
+        inv(queryKeys.cases.report(caseId)),
+        inv(queryKeys.doctor.inbox()),
+      ]),
     /** Se reparte o se mueve trabajo entre médicos. */
     asignacionesCambiadas: () =>
       Promise.all([

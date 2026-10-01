@@ -742,8 +742,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     ? false
     : rep.currentSignedDocuments === null || !rep.finalArtifact;
   const emisionPendiente = ratificado && sinDocumentoFirmado;
-  /** Las que de verdad retienen el documento, no todas las advertencias. */
-  const avisosQueRetienen = (cap.administrativeWarnings ?? []).filter((a) => a.blocksFinalDocument);
   const censo = censarLicencias(rep.licenses);
   /**
    * LA ÚNICA SEÑAL DE QUE ESTE EXPEDIENTE PIDE MÁS LECTURA es que el botón de
@@ -856,7 +854,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               data-testid="emision-pendiente"
               className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900"
             >
-              Documento firmado pendiente de emisión
+              El documento no se pudo emitir
             </span>
           )}
         </div>
@@ -875,23 +873,56 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           data-testid="panel-emision-pendiente"
           className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
         >
-          <p className="font-semibold">Informe ratificado · documento firmado pendiente de emisión</p>
+          {/*
+            ESTE PANEL DECÍA OTRA COSA, y la decía mal desde octubre de 2026:
+            «quedan antecedentes administrativos por validar… se emitirá cuando
+            coordinación los valide». Esa espera se retiró —ratificar emite—, así
+            que un informe ratificado SIN documento ya no significa que falte un
+            permiso: significa que la emisión FALLÓ. Disfrazar un fallo técnico de
+            advertencia administrativa es exactamente lo que hace que nadie lo
+            arregle, porque parece que le toca a otro.
+          */}
+          <p className="font-semibold">Informe ratificado · el documento no se pudo emitir</p>
           <p className="mt-1">
-            Tu pronunciamiento quedó registrado. El documento firmado todavía no se emite porque
-            quedan antecedentes administrativos por validar.
+            Tu pronunciamiento quedó registrado y no hay que repetirlo. Lo que falló es la generación
+            del documento, y es un problema técnico: avisa al administrador para que lo revise.
           </p>
-          {avisosQueRetienen.length > 0 && (
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              {avisosQueRetienen.map((a) => (
-                <li key={a.code}>
-                  {a.statement} <span className="text-amber-800">({a.evidence})</span>
-                </li>
-              ))}
-            </ul>
-          )}
           <p className="mt-2">
-            Se emitirá automáticamente cuando coordinación los valide, y entonces aparecerán aquí
-            los botones para descargarlo en Word y en PDF.
+            No es nada que tengas que resolver tú, y no depende de ninguna validación administrativa.
+          </p>
+        </div>
+      )}
+
+      {/*
+        OBSERVACIONES EN LOS ANTECEDENTES — y la diferencia que no se puede borrar.
+        Va FUERA de la barra de acciones, y por eso: la barra sólo se pinta cuando
+        el médico puede actuar, así que un expediente que no se puede trabajar se
+        quedaba sin ninguna explicación. Abrías el caso y no había nada que
+        hacer, ni nada que dijera por qué.
+
+        LAS DOS SON DISTINTAS Y SE DICEN DISTINTO. Una observación la valora él y
+        firma con lo que consta. Una lectura mal hecha NO la puede resolver
+        redactando, y pretender lo contrario le hace perder el viaje: esa se relee,
+        y la relee coordinación.
+      */}
+      {!puedeActuar && !rep.hold && (cap.administrativeWarnings ?? []).length > 0 && (
+        <div
+          role="note"
+          data-testid="panel-observaciones"
+          className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <p className="font-semibold">Observación en antecedentes</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {(cap.administrativeWarnings ?? []).map((a) => (
+              <li key={a.code}>
+                {a.statement} <span className="text-amber-800">({a.evidence})</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2">
+            Este expediente no se puede trabajar tal como está: los antecedentes no se leyeron bien.
+            No es algo que puedas resolver desde la revisión — hay que volver a leerlos, y lo hace
+            coordinación. Mientras tanto no hay nada que ratificar.
           </p>
         </div>
       )}

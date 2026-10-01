@@ -23,7 +23,7 @@ import { Aviso, Btn, Campo, Chip, FilaVacia, Select, Tabla, Textarea } from "../
  * escribió por qué se puede emitir igual.
  */
 
-interface Hallazgo {
+export interface Hallazgo {
   code: string;
   statement: string;
   evidence: string;

@@ -326,11 +326,22 @@ export interface OperationalCase {
   /**
    * EL CONTROL PREVIO DEL EXPEDIENTE, resumido por el servidor.
    *
-   * `finalizationBlockerCount > 0` significa: se puede trabajar y ratificar, y
-   * la emisión del documento esperará a que coordinación valide. NO es un error
-   * ni una retención. Opcional para no romper una caché con la forma anterior.
+   * `blocksMedicalWork` es la distinción que importa: `false` significa que el
+   * médico puede abrirlo, valorarlo y ratificar —y su firma emite el documento—,
+   * así que la advertencia es información y no una compuerta. `true` significa
+   * que hay prueba de que los antecedentes se leyeron mal y el expediente no se
+   * puede trabajar: se arregla releyéndolo, no con una nota.
+   *
+   * `finalizationBlockerCount` ya NO retiene ningún documento. Se conserva porque
+   * sigue diciendo qué merece atención administrativa.
+   *
+   * Opcional para no romper una caché con la forma anterior.
    */
-  qa?: { warningCount: number; finalizationBlockerCount: number } | null;
+  qa?: {
+    warningCount: number;
+    finalizationBlockerCount: number;
+    blocksMedicalWork?: boolean;
+  } | null;
   /**
    * El expediente original, cuando existe. La URL la compone el backend. Es lo
    * que permite ofrecer los antecedentes de un caso retenido SIN informe, que no

@@ -9,6 +9,7 @@ import { Aviso, Btn, Chip, FilaVacia, Select, Stat, Tabla, Textarea, workflowTon
 import { DocumentosExpediente } from "@/components/DocumentosExpediente";
 import { RectificarId } from "./RectificarId";
 import { SustituirFuente } from "./SustituirFuente";
+import { ReleerExpediente } from "./ReleerExpediente";
 
 // GET  /api/v1/admin/cases?batchId=&assignment=&status=&limit=&offset=
 // GET  /api/v1/admin/doctor-workload            (desplegable de reasignación)
@@ -30,6 +31,8 @@ export function Casos() {
   const [rectificando, setRectificando] = useState<string | null>(null);
   /** Qué fila tiene abierto el formulario de sustitución de expediente. */
   const [sustituyendo, setSustituyendo] = useState<string | null>(null);
+  /** Qué fila tiene abierto el panel para releer el expediente. */
+  const [releyendo, setReleyendo] = useState<string | null>(null);
   /** Qué fila tiene desplegados los documentos del expediente. */
   const [documentosDe, setDocumentosDe] = useState<string | null>(null);
 
@@ -247,6 +250,27 @@ export function Casos() {
                   </Btn>
                 </>
               )}
+              {/*
+                RELEER EL EXPEDIENTE. Sólo cuando el control previo dice que NO se
+                puede trabajar: eso significa que hay prueba de que los
+                antecedentes se leyeron mal, y es lo único que se arregla
+                releyéndolos. Una observación que el médico puede valorar no
+                ofrece este botón, porque releer no la cambiaría.
+              */}
+              {c.qa?.blocksMedicalWork && releyendo !== c.caseId && (
+                <Btn
+                  variante="ghost"
+                  className="px-2.5 py-1 text-xs"
+                  onClick={() => {
+                    setReleyendo(c.caseId);
+                    setRectificando(null);
+                    setSustituyendo(null);
+                    setMsg(null);
+                  }}
+                >
+                  Reprocesar
+                </Btn>
+              )}
               {c.assignment && quitando !== c.caseId && (
                 <Btn
                   variante="danger"
@@ -275,6 +299,18 @@ export function Casos() {
                 <RectificarId
                   caso={c}
                   onCerrar={() => setRectificando(null)}
+                  onHecho={(texto) => setMsg({ ok: true, texto })}
+                />
+              </td>
+            </tr>
+          )}
+          {releyendo === c.caseId && (
+            <tr className="border-t border-[var(--atm-linea)]">
+              <td colSpan={7} className="px-4 pb-3">
+                <ReleerExpediente
+                  caseId={c.caseId}
+                  externalCaseId={c.externalCaseId}
+                  onCerrar={() => setReleyendo(null)}
                   onHecho={(texto) => setMsg({ ok: true, texto })}
                 />
               </td>

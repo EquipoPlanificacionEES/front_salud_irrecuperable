@@ -20,7 +20,7 @@ import type { CaseClassification, OperationalCase } from "@/lib/backend";
 function caso(
   externalCaseId: string,
   classification: CaseClassification,
-  opciones: { conInforme?: boolean; retenido?: boolean } = {},
+  opciones: { conInforme?: boolean; retenido?: boolean; qa?: OperationalCase["qa"] } = {},
 ): OperationalCase {
   const conInforme = opciones.conInforme ?? classification !== "NO_REPORT";
   return {
@@ -56,6 +56,7 @@ function caso(
           signedAt: null,
         }
       : null,
+    ...(opciones.qa === undefined ? {} : { qa: opciones.qa }),
   };
 }
 
@@ -302,5 +303,75 @@ describe("bandeja global de un médico con dos ámbitos", () => {
     await pintar(mezcla);
     const filas = screen.getAllByRole("row").length - 1; // menos la cabecera
     expect(filas).toBe(3); // los pendientes, que es la pestaña por defecto
+  });
+});
+
+
+/**
+ * LO QUE LA BANDEJA LE DICE AL MÉDICO SOBRE LAS ADVERTENCIAS.
+ *
+ * AQUÍ HABÍA UN BADGE «Advertencia administrativa» y se retiró. Avisaba de que la
+ * emisión del documento «quedaría pendiente de coordinación», y eso dejó de ser
+ * cierto en octubre de 2026: ratificar emite. El aviso sobrevivió al cambio de
+ * regla y le enseñaba al médico a esperar un permiso que ya no existe, sobre
+ * expedientes que podía cerrar él mismo.
+ *
+ * Lo que SÍ se señala es lo contrario: cuando el expediente NO se puede trabajar.
+ * Eso él no lo puede resolver redactando, y tiene que saberlo antes de abrirlo.
+ */
+describe("Bandeja · advertencias y lo que de verdad cierra un expediente", () => {
+  const SIN_BLOQUEO = { warningCount: 2, finalizationBlockerCount: 2, blocksMedicalWork: false };
+  const NO_TRABAJABLE = { warningCount: 2, finalizationBlockerCount: 1, blocksMedicalWork: true };
+
+  it("E · ya NO existe el badge «Advertencia administrativa»", async () => {
+    await pintar([caso("33346702", "PENDING_REVIEW", { qa: SIN_BLOQUEO })]);
+    expect(screen.queryByText("Advertencia administrativa")).toBeNull();
+  });
+
+  it("F · ya NO existe el aviso de validación por coordinación", async () => {
+    await pintar([caso("33346702", "PENDING_REVIEW", { qa: SIN_BLOQUEO })]);
+    expect(screen.queryByTitle(/quedará pendiente de coordinación/i)).toBeNull();
+    expect(screen.queryByText(/pendiente de coordinación/i)).toBeNull();
+  });
+
+  it("un expediente trabajable con observaciones se muestra sólo como «Por revisar»", async () => {
+    await pintar([caso("33346702", "PENDING_REVIEW", { qa: SIN_BLOQUEO })]);
+    expect(screen.getByText("33346702")).toBeDefined();
+    // Ningún adorno: el detalle de la observación vive DENTRO del caso.
+    expect(screen.queryByTestId("chip-no-trabajable")).toBeNull();
+  });
+
+  it("un expediente que NO se puede trabajar SÍ lo dice, y dice de quién depende", async () => {
+    await pintar([caso("33361146", "PENDING_REVIEW", { qa: NO_TRABAJABLE })]);
+    const chip = screen.getByTestId("chip-no-trabajable");
+    expect(chip.textContent).toBe("Pendiente de relectura");
+    expect(chip.getAttribute("title")).toMatch(/no es algo que puedas resolver/i);
+  });
+
+  it("un RETENIDO no lleva además el aviso de relectura: su motivo ya lo explica", async () => {
+    await pintar([caso("32895245", "HOLD", { qa: NO_TRABAJABLE })]);
+    expect(screen.queryByTestId("chip-no-trabajable")).toBeNull();
+  });
+
+  it("«sin evaluar» no es «sin advertencias»: sin qa no se adorna ni se declara limpio", async () => {
+    await pintar([caso("33441193", "PENDING_REVIEW")]);
+    expect(screen.queryByTestId("chip-no-trabajable")).toBeNull();
+  });
+
+  /**
+   * G y H · DÓNDE CAE UN EXPEDIENTE. La clasificación la decide el servidor; lo
+   * que se congela aquí es que la bandeja la respeta y no la reinterpreta.
+   */
+  it("G · un expediente con corrección post-firma abierta llega como PENDIENTE", async () => {
+    await pintar([caso("33754938", "PENDING_REVIEW", { qa: NO_TRABAJABLE })]);
+    expect(screen.getByText("33754938")).toBeDefined();
+  });
+
+  it("H · un firmado sin corrección abierta está en Histórico, no en Pendientes", async () => {
+    await pintar([caso("33536456", "SIGNED")]);
+    // No está en la pestaña inicial.
+    expect(screen.queryByText("33536456")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /histórico/i }));
+    await waitFor(() => expect(screen.getByText("33536456")).toBeDefined());
   });
 });

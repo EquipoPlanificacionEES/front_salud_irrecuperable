@@ -204,24 +204,32 @@ export function Bandeja() {
                   <td className="px-4 py-2.5">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${chip.clase}`}>{chip.texto}</span>
                     {/*
-                      ADVERTENCIA ADMINISTRATIVA, no un error y no una retención.
-                      Dice lo único que el médico necesita saber ANTES de abrir:
-                      puede trabajarlo y ratificarlo, y la emisión del documento
-                      quedará pendiente de coordinación. En ámbar y sin icono de
-                      alarma, a propósito: un expediente así no tiene nada malo.
+                      AQUÍ HABÍA UN «Advertencia administrativa» QUE SE RETIRÓ.
+                      Avisaba de que la emisión del documento «quedaría pendiente
+                      de coordinación», y eso dejó de ser cierto en octubre de
+                      2026: ratificar emite. El aviso sobrevivía al cambio de
+                      regla y le enseñaba al médico a esperar un permiso que ya no
+                      existe, sobre expedientes que podía cerrar él mismo.
+                      Las observaciones siguen estando —dentro del caso, antes de
+                      firmar, con su redacción y su evidencia—, que es donde
+                      sirven para decidir.
+
+                      LO QUE SÍ SE SEÑALA ES LO QUE CIERRA EL EXPEDIENTE. Si no se
+                      puede trabajar, el médico tiene que saberlo ANTES de abrirlo:
+                      no es algo que él pueda resolver redactando, y fingir que sí
+                      le hace perder el viaje.
+
+                      `qa` NULO significa «todavía no se ha evaluado», no «sin
+                      advertencias»: un expediente sin evaluar no lleva aviso, pero
+                      tampoco se declara limpio en ninguna parte.
                     */}
-                    {/*
-                      `qa` NULO significa «todavía no se ha evaluado», no «no
-                      tiene advertencias». Por eso se pregunta por el número y
-                      no por la ausencia: un expediente sin evaluar no lleva
-                      aviso, pero tampoco se declara limpio en ninguna parte.
-                    */}
-                    {c.classification !== "HOLD" && (c.qa?.finalizationBlockerCount ?? 0) > 0 && (
+                    {c.classification !== "HOLD" && c.qa?.blocksMedicalWork === true && (
                       <span
-                        title="Puedes trabajarlo y ratificarlo. La emisión del documento final quedará pendiente de coordinación."
+                        data-testid="chip-no-trabajable"
+                        title="Los antecedentes no se leyeron bien y no se pueden trabajar así. Coordinación tiene que volver a leer el expediente; no es algo que puedas resolver desde la revisión."
                         className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
                       >
-                        Advertencia administrativa
+                        Pendiente de relectura
                       </span>
                     )}
                   </td>

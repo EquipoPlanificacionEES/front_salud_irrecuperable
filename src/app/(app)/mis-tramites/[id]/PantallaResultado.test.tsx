@@ -1584,7 +1584,13 @@ describe("PantallaResultado · informe firmado en Word y PDF", () => {
     { id: "r1", decision: "APPROVED" as const, comments: null, createdAt: "2026-09-29T10:00:00.000Z" },
   ];
 
-  it("G · ratificado sin documento: se explica por qué no hay descargas", async () => {
+  /**
+   * RATIFICADO Y SIN DOCUMENTO = UN FALLO TÉCNICO, no una espera administrativa.
+   * Desde que ratificar emite, no hay ningún permiso pendiente: si el documento no
+   * está, la emisión falló. Disfrazarlo de advertencia administrativa es lo que
+   * hace que nadie lo arregle, porque parece que le toca a otro.
+   */
+  it("G · ratificado sin documento: se dice que la emisión FALLÓ, no que falte un permiso", async () => {
     await pintarCon(
       {
         workflowStatus: "APPROVED",
@@ -1598,11 +1604,15 @@ describe("PantallaResultado · informe firmado en Word y PDF", () => {
     expect(screen.getByTestId("emision-pendiente")).toBeDefined();
     // Se dice en los dos sitios a propósito: la etiqueta donde estarían las
     // descargas, y el panel con la explicación completa.
-    expect(screen.getAllByText(/documento firmado pendiente de emisión/i)).toHaveLength(2);
+    expect(screen.getAllByText(/el documento no se pudo emitir/i)).toHaveLength(2);
+    expect(screen.getByText(/problema técnico/i)).toBeDefined();
+    // Y NO se habla de validaciones administrativas: eso ya no existe.
+    expect(screen.queryByText(/coordinación los valide/i)).toBeNull();
+    expect(screen.queryByText(/antecedentes administrativos por validar/i)).toBeNull();
     expect(screen.queryByRole("link", { name: /Descargar (Word|PDF)/ })).toBeNull();
   });
 
-  it("H · ratificado sin documento: enumera las advertencias que lo retienen", async () => {
+  it("H · ratificado sin documento: NO presenta las advertencias como la causa", async () => {
     const base = informe({ canRequestChanges: false, canApprove: false, canDownloadSigned: false });
     vi.stubGlobal(
       "fetch",
@@ -1635,9 +1645,16 @@ describe("PantallaResultado · informe firmado en Word y PDF", () => {
     pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
     await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
 
-    // Sólo la que RETIENE el documento. La otra consta en su propio sitio.
-    expect(screen.getByText(/No se pudo interpretar el estado administrativo/)).toBeDefined();
-    expect(screen.queryByText(/no trae todos los antecedentes/)).toBeNull();
+    /**
+     * NINGUNA advertencia se presenta como el motivo de que falte el documento,
+     * porque ya no lo es. El panel dice que la emisión falló y que es técnico.
+     */
+    const panel = screen.getByTestId("panel-emision-pendiente");
+    expect(panel.textContent).toMatch(/problema técnico/i);
+    // Dentro del PANEL no se habla de validaciones administrativas. Fuera sí
+    // aparece la palabra «coordinación», en el botón de escalar, que es otra cosa.
+    expect(panel.textContent).not.toMatch(/coordinación los valide/i);
+    expect(panel.textContent).not.toMatch(/antecedentes administrativos por validar/i);
   });
 
   it("I · firmado y con documento: ni rastro del aviso de emisión pendiente", async () => {
