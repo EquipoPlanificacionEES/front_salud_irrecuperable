@@ -15,6 +15,7 @@ import type {
   DocumentosFirmados,
   ExportPreflight,
   DoctorWorkload,
+  ExportDrift,
   ExportJob,
   HeldCase,
   OperationalCase,
@@ -351,6 +352,21 @@ export function useExports(opciones?: { intervaloMs?: number }) {
  * crea nada en el servidor. Fresco siempre — un PDF puede terminar de
  * generarse en cualquier momento.
  */
+/**
+ * QUÉ CAMBIÓ DESDE UNA EXPORTACIÓN. Una consulta por exportación, y por eso NO
+ * va dentro del listado: pintar la tabla haría una consulta por fila de golpe.
+ * Se pide sólo para las que están listas, que son las que se pueden rehacer.
+ */
+export function useExportDrift(exportJobId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.exportDrift(exportJobId ?? ""),
+    queryFn: () => api<ExportDrift>(`/exports/${exportJobId}/drift`),
+    enabled: exportJobId !== null,
+    staleTime: GC.corto,
+    gcTime: GC.corto,
+  });
+}
+
 export function useExportPreflight(filtros: Record<string, string>) {
   const qs = new URLSearchParams(filtros).toString();
   return useQuery({

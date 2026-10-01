@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import { useBatches, useDoctorWorkload, useExportPreflight, useExports, useInvalidar } from "@/lib/queries";
+import {
+  useBatches,
+  useDoctorWorkload,
+  useExportDrift,
+  useExportPreflight,
+  useExports,
+  useInvalidar,
+} from "@/lib/queries";
 import { ORIENTATION_LABEL, type ExportJob, type ExportPreflight, type Orientation } from "@/lib/backend";
 import { Aviso, Btn, Campo, Chip, EXPORT_LABEL, FilaVacia, Select, Tabla, batchTono, exportTono } from "../ui";
 
@@ -18,8 +25,11 @@ import { Aviso, Btn, Campo, Chip, EXPORT_LABEL, FilaVacia, Select, Tabla, batchT
 
 const ORIENTACIONES: Orientation[] = ["IRRECOVERABLE", "RECOVERABLE", "INDETERMINATE"];
 
-type Formato = "docx" | "pdf";
-const NOMBRE: Record<Formato, string> = { docx: "Word", pdf: "PDF" };
+type Formato = "docx" | "pdf" | "both";
+const NOMBRE: Record<Formato, string> = { docx: "Solo Word", pdf: "Solo PDF", both: "Word + PDF" };
+/** Qué documentos lleva, para los botones y los avisos. */
+const ARCHIVO: Record<Formato, string> = { docx: "Word", pdf: "PDF", both: "Word + PDF" };
+const FORMATOS: Formato[] = ["docx", "pdf", "both"];
 
 /** «93 disponibles» si están todos; «91 de 93 disponibles» si no. Nunca «completo» a medias. */
 export function disponibles(listos: number, total: number): string {
@@ -48,9 +58,10 @@ export function Exportaciones() {
    * CADA FORMATO LLEVA SU PROPIO ESTADO. Pedir el ZIP PDF no bloquea el de Word:
    * son dos trabajos independientes en el servidor.
    */
-  const [enviando, setEnviando] = useState<Record<Formato, boolean>>({ docx: false, pdf: false });
-  const [pendiente, setPendiente] = useState<Record<Formato, string | null>>({ docx: null, pdf: null });
+  const [enviando, setEnviando] = useState<Record<Formato, boolean>>({ docx: false, pdf: false, both: false });
+  const [pendiente, setPendiente] = useState<Record<Formato, string | null>>({ docx: null, pdf: null, both: null });
   const [ultimoId, setUltimoId] = useState<string | null>(null);
+  const [reconstruyendo, setReconstruyendo] = useState<string | null>(null);
 
   // Semanas y médicos: las mismas consultas que el resto de administración.
   const { data: lotes } = useBatches();
@@ -110,12 +121,51 @@ export function Exportaciones() {
   }
 
   /**
+   * GENERAR UNA ACTUALIZADA: los MISMOS filtros, un trabajo NUEVO. La anterior
+   * no se toca — es un snapshot inmutable y sigue descargándose igual.
+   */
+  async function regenerar(job: ExportJob) {
+    const formato: Formato = job.format === "BOTH" ? "both" : job.format === "PDF" ? "pdf" : "docx";
+    const { format: _f, caseCount: _c, unavailableItems: _u, rebuiltFromExportJobId: _r, ...filtros } = job.filters as Record<string, string>;
+    setMsg(null);
+    try {
+      const nuevo = await api<{ id: string }>("/exports", {
+        json: { type: "SIGNED_REPORTS_ZIP", format: formato, filters: filtros },
+      });
+      setUltimoId(nuevo.id);
+      setPendiente((p) => ({ ...p, [formato]: nuevo.id }));
+      await invalidar.exportacionEncolada();
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo generar la actualizada." });
+    }
+  }
+
+  /** Reconstruye el archivo de una vencida SIN volver a seleccionar nada. */
+  async function reconstruir(job: ExportJob) {
+    setReconstruyendo(job.id);
+    setMsg(null);
+    try {
+      const nuevo = await api<{ id: string }>(`/exports/${job.id}/rebuild`, { json: {} });
+      setUltimoId(nuevo.id);
+      await invalidar.exportacionEncolada();
+      setMsg({
+        ok: true,
+        texto: "Reconstruyendo con la misma selección de entonces. La exportación original no se modificó.",
+      });
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo reconstruir." });
+    } finally {
+      setReconstruyendo(null);
+    }
+  }
+
+  /**
    * CUANDO EL ZIP PEDIDO QUEDA LISTO, SE DESCARGA SOLO. El listado ya se sondea
    * mientras haya trabajos en curso; aquí sólo se mira si el de cada formato
    * terminó.
    */
   useEffect(() => {
-    for (const formato of ["docx", "pdf"] as const) {
+    for (const formato of FORMATOS) {
       const id = pendiente[formato];
       const job = id ? jobs.find((j) => j.id === id) : undefined;
       if (!id || !job) continue;
@@ -207,21 +257,17 @@ export function Exportaciones() {
           <strong>versión firmada vigente</strong>, una sola vez. Al hacer clic se prepara el ZIP en el servidor y se
           descarga solo cuando está listo.
         </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <BotonZip
-            formato="docx"
-            previo={previo}
-            cargando={previoCargando}
-            ocupado={enviando.docx || pendiente.docx !== null}
-            onClick={() => generar("docx")}
-          />
-          <BotonZip
-            formato="pdf"
-            previo={previo}
-            cargando={previoCargando}
-            ocupado={enviando.pdf || pendiente.pdf !== null}
-            onClick={() => generar("pdf")}
-          />
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          {FORMATOS.map((formato) => (
+            <BotonZip
+              key={formato}
+              formato={formato}
+              previo={previo}
+              cargando={previoCargando}
+              ocupado={enviando[formato] || pendiente[formato] !== null}
+              onClick={() => generar(formato)}
+            />
+          ))}
         </div>
       </div>
 
@@ -241,7 +287,7 @@ export function Exportaciones() {
             >
               <td className="px-4 py-2.5 text-zinc-600">{new Date(j.createdAt).toLocaleString("es-CL")}</td>
               <td className="px-4 py-2.5">
-                <Chip>{j.format === "PDF" ? "PDF" : "Word"}</Chip>
+                <Chip>{j.format === "BOTH" ? "Word + PDF" : j.format === "PDF" ? "PDF" : "Word"}</Chip>
               </td>
               <td className="px-4 py-2.5">
                 <Chip tono={exportTono(j.status)}>{EXPORT_LABEL[j.status] ?? j.status}</Chip>
@@ -249,15 +295,17 @@ export function Exportaciones() {
               </td>
               <td className="px-4 py-2.5 text-zinc-600">{j.progressPercent}%</td>
               <td className="px-4 py-2.5 text-zinc-600">
-                {j.processedItems}/{j.totalItems}
+                {/* ARCHIVOS y EXPEDIENTES por separado: en un ZIP mixto no son lo mismo. */}
+                {j.processedItems}/{j.totalItems} archivo(s)
+                {j.format === "BOTH" && (
+                  <span className="ml-1 text-xs text-zinc-500">· {j.caseCount ?? j.totalItems} expediente(s)</span>
+                )}
                 {(j.unavailableItems ?? 0) > 0 && (
                   <span className="ml-1 text-xs text-[var(--atm-obs)]">
-                    ·{" "}
-                    {j.format === "PDF"
-                      ? `${j.unavailableItems} no disponible(s), listado incluido`
-                      : `${j.unavailableItems} sin informe firmado`}
+                    · {j.unavailableItems} sin documento, en FALTANTES.csv
                   </span>
                 )}
+                <AvisoDrift job={j} onRegenerar={() => regenerar(j)} />
               </td>
               <td className="px-4 py-2.5 text-right">
                 {j.downloadAvailable ? (
@@ -267,8 +315,22 @@ export function Exportaciones() {
                     rel="noreferrer"
                     className="rounded-lg border border-[var(--atm-linea)] px-2.5 py-1 text-xs font-medium text-[var(--atm-azul)] hover:bg-blue-50"
                   >
-                    Descargar ZIP {j.format === "PDF" ? "PDF" : "Word"}
+                    Descargar ZIP {j.format === "BOTH" ? "Word + PDF" : j.format === "PDF" ? "PDF" : "Word"}
                   </a>
+                ) : j.status === "EXPIRED" ? (
+                  /**
+                   * UNA VENCIDA SE RECONSTRUYE CON SU MISMA SELECCIÓN. Pedir una
+                   * nueva re-seleccionaría con los datos de hoy y entregaría otro
+                   * archivo; esto reproduce el que se entregó.
+                   */
+                  <Btn
+                    onClick={() => reconstruir(j)}
+                    disabled={reconstruyendo === j.id}
+                    variante="ghost"
+                    className="text-xs"
+                  >
+                    {reconstruyendo === j.id ? "Reconstruyendo…" : "Reconstruir"}
+                  </Btn>
                 ) : (
                   <span className="text-xs text-zinc-400">—</span>
                 )}
@@ -284,14 +346,14 @@ export function Exportaciones() {
 /** Qué dice el aviso cuando el ZIP ya bajó: lo que lleva, y lo que no. */
 function resumenListo(job: ExportJob, formato: Formato): string {
   const faltan = job.unavailableItems ?? 0;
-  if (formato === "pdf") {
-    return faltan > 0
-      ? `ZIP PDF descargado: ${job.totalItems} PDF. Faltan ${faltan}; van listados en PDF_NO_DISPONIBLES.csv dentro del ZIP.`
-      : `ZIP PDF descargado: ${job.totalItems} PDF, todos los del alcance.`;
-  }
+  const expedientes = job.caseCount ?? job.totalItems;
+  const cuerpo =
+    formato === "both"
+      ? `${expedientes} expediente(s), ${job.totalItems} archivo(s)`
+      : `${job.totalItems} ${formato === "pdf" ? "PDF" : "informes"}`;
   return faltan > 0
-    ? `ZIP Word descargado: ${job.totalItems} informes. ${faltan} caso(s) sin informe firmado no van incluidos.`
-    : `ZIP Word descargado: ${job.totalItems} informes, todos los del alcance.`;
+    ? `ZIP ${ARCHIVO[formato]} descargado: ${cuerpo}. Faltan ${faltan}; van listados en FALTANTES.csv dentro del ZIP.`
+    : `ZIP ${ARCHIVO[formato]} descargado: ${cuerpo}, todo lo del alcance.`;
 }
 
 /**
@@ -311,35 +373,77 @@ function BotonZip({
   ocupado: boolean;
   onClick: () => void;
 }) {
-  const listos = previo ? (formato === "pdf" ? previo.pdf.ready : previo.word.ready) : 0;
   const total = previo?.totalCases ?? 0;
-  const faltan = total - listos;
+  /**
+   * DOS CIFRAS, NO UNA. En el ZIP mixto un expediente aporta dos archivos, así
+   * que «180» a secas no dice si son expedientes o documentos — y el tope del
+   * servidor se mide en archivos.
+   */
+  const casos = previo ? (formato === "both" ? (previo.both?.cases ?? 0) : formato === "pdf" ? previo.pdf.ready : previo.word.ready) : 0;
+  const archivos = previo && formato === "both" ? (previo.both?.files ?? 0) : casos;
+  const faltan = total - casos;
   return (
-    <div className="rounded-lg border border-[var(--atm-linea)] p-3">
+    <div className="rounded-lg border border-[var(--atm-linea)] p-3" data-testid={`zip-${formato}`}>
       <Btn
         onClick={onClick}
-        disabled={ocupado || cargando || listos === 0}
-        variante={formato === "pdf" ? "primary" : "ghost"}
+        disabled={ocupado || cargando || casos === 0}
+        variante={formato === "both" ? "primary" : "ghost"}
         className="w-full"
       >
-        {ocupado ? `Preparando ZIP ${NOMBRE[formato]}…` : `Descargar ZIP ${NOMBRE[formato]}`}
+        {ocupado ? `Preparando ZIP ${ARCHIVO[formato]}…` : `Descargar ZIP ${ARCHIVO[formato]}`}
       </Btn>
       <p className="mt-2 text-xs text-zinc-600">
         {cargando || !previo ? (
           "Contando documentos…"
+        ) : formato === "both" ? (
+          /* Las DOS cifras, porque aquí un expediente aporta dos archivos. */
+          <>
+            <strong>{NOMBRE[formato]}:</strong> {casos} expediente(s) · {archivos} archivo(s)
+          </>
         ) : (
           <>
-            <strong>{NOMBRE[formato]}:</strong> {disponibles(listos, total)}
+            <strong>{ARCHIVO[formato]}:</strong> {disponibles(casos, total)}
           </>
         )}
       </p>
-      {previo && listos === 0 && total > 0 && (
-        <p className="mt-1 text-xs text-[var(--atm-obs)]">Ningún {NOMBRE[formato]} disponible en este alcance.</p>
+      {previo && casos === 0 && total > 0 && (
+        <p className="mt-1 text-xs text-[var(--atm-obs)]">Ningún {ARCHIVO[formato]} disponible en este alcance.</p>
       )}
-      {previo && formato === "pdf" && listos > 0 && faltan > 0 && (
-        <p className="mt-1 text-xs text-[var(--atm-obs)]">Se incluirá un listado de los PDF no disponibles.</p>
+      {previo && faltan > 0 && casos > 0 && (
+        <p className="mt-1 text-xs text-[var(--atm-obs)]">Se incluirá FALTANTES.csv con lo que no va.</p>
       )}
     </div>
+  );
+}
+
+/**
+ * QUÉ CAMBIÓ DESDE ESTA EXPORTACIÓN, y el botón que lo resuelve.
+ *
+ * La exportación anterior NO se toca: «Generar actualizada» crea una nueva con
+ * los MISMOS filtros. Es lo que faltaba para no tener que regenerar por si
+ * acaso — en producción hay dos exportaciones Word idénticas del mismo día,
+ * con los mismos 93 expedientes, por no poder saber esto.
+ */
+function AvisoDrift({
+  job,
+  onRegenerar,
+}: {
+  job: ExportJob;
+  onRegenerar: () => void;
+}) {
+  const { data } = useExportDrift(job.downloadAvailable ? job.id : null);
+  if (!data || data.driftTotal === 0) return null;
+  const partes = [
+    data.addedCases > 0 ? `${data.addedCases} informe(s) nuevo(s)` : null,
+    data.supersededCases > 0 ? `${data.supersededCases} informe(s) actualizado(s)` : null,
+  ].filter(Boolean);
+  return (
+    <p className="mt-1 text-xs text-[var(--atm-obs)]" data-testid="aviso-drift">
+      Hay {partes.join(" y ")} desde esta exportación.{" "}
+      <button type="button" onClick={onRegenerar} className="font-medium text-[var(--atm-azul)] underline">
+        Generar exportación actualizada
+      </button>
+    </p>
   );
 }
 

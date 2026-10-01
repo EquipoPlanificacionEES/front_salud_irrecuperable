@@ -496,6 +496,27 @@ export interface ExportPreflight {
   word: { ready: number };
   pdf: { ready: number; failed: number; pending: number; missing: number };
   pdfUnavailable: { externalCaseId: string; status: "FAILED" | "PENDING" | "MISSING" | "NO_SIGNED_REPORT" }[];
+  /**
+   * El ZIP mixto en sus DOS cifras. `cases` son expedientes que aportan algo;
+   * `files`, archivos dentro del ZIP. No son lo mismo, y el tope se mide en
+   * archivos. Opcional: una API anterior no las manda.
+   */
+  both?: { cases: number; files: number };
+}
+
+/**
+ * QUÉ CAMBIÓ DESDE QUE SE PIDIÓ UNA EXPORTACIÓN.
+ *
+ * Tres cifras y no una: si un expediente se volvió a firmar, el número de casos
+ * no cambia y el ZIP entregado lleva un documento que ya no es el vigente. Un
+ * contador diría «nada nuevo» de un archivo caducado.
+ */
+export interface ExportDrift {
+  exportJobId: string;
+  addedCases: number;
+  supersededCases: number;
+  unchangedCases: number;
+  driftTotal: number;
 }
 
 export interface ExportJob {
@@ -504,13 +525,19 @@ export interface ExportJob {
   status: ExportStatus;
   filters: Record<string, string>;
   /** Qué documentos lleva. Opcional: una API anterior no lo manda, y entonces era Word. */
-  format?: "DOCX" | "PDF";
+  format?: "DOCX" | "PDF" | "BOTH";
   /**
    * Expedientes del alcance que NO van en el ZIP porque su documento no está
-   * disponible. En el ZIP PDF van listados dentro, en `PDF_NO_DISPONIBLES.csv`.
+   * disponible. Van listados dentro del propio ZIP, en `FALTANTES.csv`.
    */
   unavailableItems?: number;
+  /** ARCHIVOS que lleva el ZIP. En un ZIP mixto un expediente aporta dos. */
   totalItems: number;
+  /**
+   * EXPEDIENTES que aportan algo. Opcional: las exportaciones anteriores a esta
+   * distinción eran de un solo formato, así que un expediente era un archivo.
+   */
+  caseCount?: number;
   processedItems: number;
   progressPercent: number;
   createdAt: string;

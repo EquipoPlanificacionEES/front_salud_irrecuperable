@@ -85,6 +85,8 @@ export const queryKeys = {
   exports: () => ["exports"] as const,
   /** Bajo `"exports"`: pedir un ZIP invalida también su recuento. */
   exportPreflight: (filtros: Record<string, string>) => ["exports", "preflight", filtros] as const,
+  /** Bajo `"exports"`: una exportación nueva invalida el drift de las anteriores. */
+  exportDrift: (exportJobId: string) => ["exports", "drift", exportJobId] as const,
 } as const;
 
 /**
