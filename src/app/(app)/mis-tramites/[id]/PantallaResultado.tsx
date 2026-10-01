@@ -451,6 +451,9 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
   const [busy, setBusy] = useState(false);
   /** El médico ya vio las advertencias documentales y aun así quiere ratificar. */
   const [confirmarAvisos, setConfirmarAvisos] = useState(false);
+  /** El escalamiento pide motivo antes de hacer nada. */
+  const [escalando, setEscalando] = useState(false);
+  const [motivoEscalada, setMotivoEscalada] = useState("");
   const [confirmadoConAvisos, setConfirmadoConAvisos] = useState(false);
   /**
    * SALIR DEL EDITOR CON TRABAJO SIN GUARDAR TIENE QUE COSTAR UN PASO.
@@ -611,14 +614,45 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     setModo("ver");
   }
 
+  /**
+   * ESCALAR A COORDINACIÓN — la tercera salida, y deliberadamente secundaria.
+   *
+   * No compite con «Ratificar»: es para lo que el profesional NO puede resolver
+   * desde la revisión. Exige motivo escrito porque quien lo mire después necesita
+   * saber qué buscar, y deja el expediente retenido hasta que coordinación lo
+   * resuelva — sin perder nada de lo que él ya hubiera guardado.
+   */
+  async function escalar() {
+    if (motivoEscalada.trim().length < 10) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api(`/cases/${caseId}/escalate`, { json: { reason: motivoEscalada.trim() } });
+      setEscalando(false);
+      setMotivoEscalada("");
+      setMsg({
+        ok: true,
+        texto:
+          "Escalado a coordinación. El expediente queda retenido con tu motivo; lo que hayas " +
+          "guardado sigue ahí. Te volverá cuando lo resuelvan.",
+      });
+      await cargar();
+      await invalidar.informeRatificado(caseId, { informeYaRefrescado: true });
+    } catch (e) {
+      setMsg({ ok: false, texto: e instanceof ApiFallo ? e.message : "No se pudo escalar." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function ratificar() {
     if (!rep) return;
     const resolviendo = modo === "resolver";
     if (resolviendo && (!cuerpoListo || faltaMotivo)) return;
     /**
      * CONFIRMAR, NO IMPEDIR. Si el expediente arrastra advertencias
-     * documentales, se dicen antes de ratificar —y se dice que el documento
-     * saldrá después— pero la decisión sigue siendo del médico.
+     * documentales, se dicen antes de ratificar, pero la decisión es del médico:
+     * su firma emite el documento con lo que consta.
      */
     if ((rep.capabilities.administrativeWarnings ?? []).length > 0 && !confirmadoConAvisos) {
       setConfirmarAvisos(true);
@@ -633,17 +667,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
         setModo("ver");
       } else {
         await api(`/reports/${rep.id}/approve`, { json: {} });
-      }
-      if (rep.capabilities.finalDocumentDeferred) {
-        setMsg({
-          ok: true,
-          texto:
-            "Informe ratificado. Tu pronunciamiento quedó registrado. El documento firmado se " +
-            "emitirá cuando coordinación valide los antecedentes administrativos pendientes; no " +
-            "tienes que volver a hacer nada.",
-        });
-        await cargar();
-        return;
       }
       setMsg({ ok: true, texto: "Informe ratificado. Generando el documento firmado…" });
       // El documento firmado lo produce un worker; sondeamos hasta que exista.
@@ -1262,12 +1285,18 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                       </li>
                     ))}
                   </ul>
-                  {cap.finalDocumentDeferred && (
-                    <p className="mt-2">
-                      Puedes ratificar igualmente: tu pronunciamiento queda registrado. El documento
-                      firmado se emitirá cuando coordinación valide estos antecedentes.
-                    </p>
-                  )}
+                  {/*
+                    NO SE ANUNCIA NINGUNA ESPERA ADMINISTRATIVA, y esa frase estuvo
+                    aquí: «el documento se emitirá cuando coordinación valide estos
+                    antecedentes». Dejó de ser cierta en octubre de 2026 —ratificar
+                    emite— y mantenerla habría enseñado a esperar algo que ya no
+                    ocurre. Si el profesional no puede resolver lo que dice la
+                    advertencia, la salida es escalar, y está en esta misma barra.
+                  */}
+                  <p className="mt-2">
+                    Puedes ratificar con lo que consta: tu firma emite el documento. Si algo de esto
+                    no lo puedes resolver desde la revisión, escálalo a coordinación.
+                  </p>
                 </div>
               )}
               {/* CONFIRMAR, NO IMPEDIR. Se pregunta una vez y la decisión es suya. */}
@@ -1297,6 +1326,51 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                   </div>
                 </div>
               )}
+              {/*
+                ESCALAR A COORDINACIÓN. El motivo se pide ANTES de hacer nada: sin
+                él, quien lo reciba no sabe qué buscar, y el servidor lo rechaza
+                igualmente.
+              */}
+              {escalando && (
+                <div
+                  data-testid="dialogo-escalar"
+                  className="w-full rounded-lg border border-[var(--atm-linea)] bg-white p-3 text-sm"
+                >
+                  <p className="font-semibold text-zinc-800">Escalar a coordinación</p>
+                  <p className="mt-1 text-zinc-600">
+                    Utiliza esta opción cuando detectes un problema en los antecedentes que no puedas
+                    resolver desde la revisión médica.
+                  </p>
+                  <label className="mt-2 block">
+                    <span className="text-xs font-medium text-zinc-700">Motivo *</span>
+                    <textarea
+                      value={motivoEscalada}
+                      onChange={(e) => setMotivoEscalada(e.target.value)}
+                      rows={3}
+                      placeholder="Qué encontraste y por qué no puedes resolverlo desde la revisión."
+                      className="mt-1 w-full rounded-lg border border-[var(--atm-linea)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--atm-azul2)]"
+                    />
+                  </label>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={() => {
+                        setEscalando(false);
+                        setMotivoEscalada("");
+                      }}
+                      className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={escalar}
+                      disabled={busy || motivoEscalada.trim().length < 10}
+                      className="rounded-lg bg-[var(--atm-obs)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                    >
+                      {busy ? "Escalando…" : "Escalar"}
+                    </button>
+                  </div>
+                </div>
+              )}
               {cap.canRequestChanges && (
                 <button onClick={() => abrirFormulario("modificar")} className="rounded-lg border border-[var(--atm-linea)] px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
                   No estoy de acuerdo, corregir
@@ -1305,6 +1379,20 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               {/* Cuando el informe ya se puede firmar tal como está, «Ratificar»
                   firma. Cuando no, el mismo lugar abre el formulario donde el
                   médico emite o confirma su pronunciamiento, y se llama así. */}
+              {/*
+                SECUNDARIO A PROPÓSITO: sin fondo, en texto, y antes de «Ratificar».
+                Es una salida que existe, no una que se sugiera — la vía normal es
+                revisar, corregir si hace falta y firmar.
+              */}
+              {!escalando && (
+                <button
+                  onClick={() => setEscalando(true)}
+                  disabled={busy}
+                  className="text-sm font-medium text-zinc-500 underline decoration-zinc-300 underline-offset-4 hover:text-[var(--atm-obs)] disabled:opacity-40"
+                >
+                  Escalar a coordinación
+                </button>
+              )}
               {puedeRatificar && (
                 <button
                   onClick={cap.canApprove ? ratificar : () => abrirFormulario("resolver")}

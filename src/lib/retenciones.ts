@@ -50,6 +50,18 @@ export const MOTIVOS_RETENCION = {
     descripcion: "El expediente no figura en la planilla de la semana, o figura repetido. Se corrige con quien envió la planilla.",
     categoria: "OPERACIONAL",
   },
+  DOCTOR_ESCALATION: {
+    etiqueta: "Escalado por el médico",
+    descripcion:
+      "El profesional encontró un problema en los antecedentes que no puede resolver desde la revisión médica. Su motivo está en el detalle.",
+    categoria: "OPERACIONAL",
+  },
+  SOURCE_REINGESTION_CONFLICT: {
+    etiqueta: "Reingesta sobre trabajo médico",
+    descripcion:
+      "Una ingesta nueva llegó sobre un expediente que ya tenía trabajo del profesional, y se detuvo antes de pisarlo.",
+    categoria: "OPERACIONAL",
+  },
   PREASSIGNMENT_DATA_MISSING: {
     etiqueta: "Falta identidad legible para validar",
     descripcion: "El expediente no trae un RUT legible con el que compararlo contra la planilla.",

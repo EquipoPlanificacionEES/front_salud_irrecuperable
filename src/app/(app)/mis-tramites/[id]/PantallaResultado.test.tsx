@@ -58,6 +58,13 @@ function informe(
     canResolveAndApprove?: boolean;
     hasActiveSignature?: boolean;
     canDownloadSigned?: boolean;
+    /** Las advertencias del expediente, para las pruebas que las necesitan a la vista. */
+    administrativeWarnings?: {
+      code: string;
+      statement: string;
+      evidence: string;
+      blocksFinalDocument: boolean;
+    }[];
   },
   licenses: ReturnType<typeof licencia>[] = SETENTA_Y_SIETE_INDETERMINADAS,
   thresholdStatus: "MET" | "NOT_MET" | "INDETERMINATE" | null = "NOT_MET",
@@ -1643,5 +1650,115 @@ describe("PantallaResultado · informe firmado en Word y PDF", () => {
   it("J · sin ratificar y sin documento: no se anuncia una emisión que nadie pidió", async () => {
     await pintarCon({ workflowStatus: "READY_FOR_REVIEW", reviews: [], currentSignedDocuments: null }, false);
     expect(screen.queryByTestId("panel-emision-pendiente")).toBeNull();
+  });
+});
+
+
+/**
+ * ESCALAR A COORDINACIÓN — la tercera salida de una revisión médica.
+ *
+ * Lo que se congela: que es SECUNDARIA y no compite con «Ratificar»; que el
+ * motivo es obligatorio y con un mínimo real, porque quien lo reciba necesita
+ * saber qué buscar; y que cancelar no llama a nadie.
+ *
+ * Y una ausencia, que es la mitad que importa: la pantalla ya NO anuncia ninguna
+ * espera administrativa. Esa frase —«el documento se emitirá cuando coordinación
+ * valide estos antecedentes»— dejó de ser cierta en octubre de 2026.
+ */
+describe("PantallaResultado · escalar a coordinación", () => {
+  const MOTIVO = "No puedo determinar las cifras administrativas con los antecedentes disponibles.";
+
+  /** Como `fetchDevolviendo`, pero además guarda el cuerpo de cada envío. */
+  function espiar(cuerpo: unknown) {
+    const envios: { url: string; body: string | null; method: string | undefined }[] = [];
+    const mock = vi.fn(async (url: string, init?: RequestInit) => {
+      envios.push({
+        url: String(url),
+        body: typeof init?.body === "string" ? init.body : null,
+        method: init?.method,
+      });
+      return json(String(url).includes("/manual-form") ? FORMULARIO : cuerpo);
+    });
+    return { mock, envios };
+  }
+
+  it("ofrece la acción, y como secundaria: no es un botón que compita con Ratificar", async () => {
+    await pintar({ canRequestChanges: true, canApprove: true });
+
+    const escalar = screen.getByRole("button", { name: "Escalar a coordinación" });
+    const ratificar = screen.getByRole("button", { name: "Ratificar" });
+    // «Ratificar» es la acción principal: lleva fondo. Escalar, no.
+    expect(ratificar.className).toContain("bg-[var(--atm-azul)]");
+    expect(escalar.className).not.toContain("bg-[var(--atm-azul)]");
+  });
+
+  it("pide el motivo ANTES de hacer nada, y sin él no llama al servidor", async () => {
+    const { mock, envios } = espiar(informe({ canRequestChanges: true, canApprove: true }));
+    vi.stubGlobal("fetch", mock);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Escalar a coordinación" }));
+    await waitFor(() => expect(screen.getByTestId("dialogo-escalar")).toBeDefined());
+    expect(screen.getByText(/no puedas resolver desde la revisión médica/)).toBeDefined();
+
+    // Vacío: el botón no está disponible.
+    const enviar = screen.getByRole("button", { name: "Escalar" }) as HTMLButtonElement;
+    expect(enviar.disabled).toBe(true);
+    // Demasiado corto: tampoco.
+    fireEvent.change(screen.getByRole("textbox", { name: /Motivo/ }), { target: { value: "no sé" } });
+    expect((screen.getByRole("button", { name: "Escalar" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(envios.some((e) => e.method === "POST")).toBe(false);
+  });
+
+  it("con motivo, manda reason al endpoint del expediente", async () => {
+    const { mock, envios } = espiar(informe({ canRequestChanges: true, canApprove: true }));
+    vi.stubGlobal("fetch", mock);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Escalar a coordinación" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Motivo/ }), { target: { value: MOTIVO } });
+    fireEvent.click(screen.getByRole("button", { name: "Escalar" }));
+
+    await waitFor(() => expect(envios.some((e) => e.url.includes("/escalate"))).toBe(true));
+    const envio = envios.find((e) => e.url.includes("/escalate"));
+    expect(JSON.parse(String(envio?.body))).toEqual({ reason: MOTIVO });
+    // Y dice que el trabajo guardado no se pierde.
+    await waitFor(() => expect(screen.getByText(/lo que hayas guardado sigue ahí/i)).toBeDefined());
+  });
+
+  it("cancelar no llama a nadie y cierra el diálogo", async () => {
+    const { mock, envios } = espiar(informe({ canRequestChanges: true, canApprove: true }));
+    vi.stubGlobal("fetch", mock);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Escalar a coordinación" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Motivo/ }), { target: { value: MOTIVO } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => expect(screen.queryByTestId("dialogo-escalar")).toBeNull());
+    expect(envios.some((e) => e.url.includes("/escalate"))).toBe(false);
+  });
+
+  it("con advertencias NO anuncia ninguna espera administrativa", async () => {
+    await pintar({
+      canRequestChanges: true,
+      canApprove: true,
+      administrativeWarnings: [
+        {
+          code: "MASTER_COVERAGE_UNVERIFIED",
+          statement: "No se pudo comprobar cuántas licencias imprime el listado maestro.",
+          evidence: "12 licencia(s) leídas",
+          blocksFinalDocument: true,
+        },
+      ],
+    });
+
+    expect(screen.getByText(/Advertencias sobre los antecedentes/)).toBeDefined();
+    // La frase retirada, que enseñaba a esperar algo que ya no ocurre.
+    expect(screen.queryByText(/cuando coordinación valide/i)).toBeNull();
+    expect(screen.getByText(/tu firma emite el documento/i)).toBeDefined();
   });
 });

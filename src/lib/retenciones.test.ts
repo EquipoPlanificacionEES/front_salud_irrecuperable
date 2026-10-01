@@ -21,15 +21,23 @@ describe("presentarMotivoRetencion", () => {
     expect(m.descripcion.length).toBeGreaterThan(10);
   });
 
-  it("cubre exactamente los seis motivos de CaseHoldReason", () => {
+  /**
+   * ESTA PRUEBA ES LA QUE AVISA. Un motivo nuevo en `CaseHoldReason` que nadie
+   * añada aquí se muestra como «Retenido» genérico, sin explicación, en la
+   * bandeja de quien tiene que resolverlo. Pasó con
+   * `SOURCE_REINGESTION_CONFLICT`, que estuvo así desde su propia migración.
+   */
+  it("cubre exactamente los ocho motivos de CaseHoldReason", () => {
     expect(Object.keys(MOTIVOS_RETENCION).sort()).toEqual(
       [
+        "DOCTOR_ESCALATION",
         "DUPLICATE_SOURCE_DOCUMENT",
         "EXPECTED_IDENTITY_MISMATCH",
         "NOT_IN_BATCH_SOURCE",
         "OUT_OF_MENTAL_HEALTH_SCOPE",
         "PREASSIGNMENT_DATA_MISSING",
         "SOURCE_IDENTITY_CONFLICT",
+        "SOURCE_REINGESTION_CONFLICT",
       ].sort(),
     );
   });
