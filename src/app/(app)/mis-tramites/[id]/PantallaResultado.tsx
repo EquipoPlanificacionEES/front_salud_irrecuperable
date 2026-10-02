@@ -645,16 +645,45 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
     }
   }
 
-  async function ratificar() {
+  /**
+   * EL SEGUNDO FALLO DEL MISMO INCIDENTE, y era un bucle.
+   *
+   * La confirmación se preguntaba leyendo `confirmadoConAvisos` del estado, y el
+   * botón «Ratificar de todos modos» lo ponía a `true` y llamaba a `ratificar()`
+   * en el mismo tick. React no ha refrescado el estado todavía, así que la
+   * función seguía viendo `false`, volvía a pedir confirmación y no enviaba nada
+   * NUNCA. Afectaba a cualquier expediente con una advertencia, por cualquiera de
+   * los dos caminos.
+   *
+   * `yaConfirmado` llega por PARÁMETRO justamente por eso: una decisión que se
+   * acaba de tomar no se consulta en un estado que aún no existe.
+   */
+  async function ratificar(yaConfirmado = false) {
     if (!rep) return;
     const resolviendo = modo === "resolver";
-    if (resolviendo && (!cuerpoListo || faltaMotivo)) return;
+    /**
+     * NINGÚN CAMINO SALE DE AQUÍ EN SILENCIO. El botón ya se deshabilita cuando
+     * falta algo, así que esto no debería alcanzarse desde él — pero sí se
+     * alcanza desde «Ratificar de todos modos», y un clic que no hace nada ni
+     * dice nada es indistinguible de una pantalla rota.
+     */
+    if (resolviendo && !cuerpoListo) {
+      setMsg({
+        ok: false,
+        texto: "Falta tu pronunciamiento: elige una evaluación y escribe la conclusión general.",
+      });
+      return;
+    }
+    if (resolviendo && faltaMotivo) {
+      setMsg({ ok: false, texto: "Falta el motivo de la corrección (mínimo 10 caracteres)." });
+      return;
+    }
     /**
      * CONFIRMAR, NO IMPEDIR. Si el expediente arrastra advertencias
      * documentales, se dicen antes de ratificar, pero la decisión es del médico:
      * su firma emite el documento con lo que consta.
      */
-    if ((rep.capabilities.administrativeWarnings ?? []).length > 0 && !confirmadoConAvisos) {
+    if ((rep.capabilities.administrativeWarnings ?? []).length > 0 && !yaConfirmado && !confirmadoConAvisos) {
       setConfirmarAvisos(true);
       return;
     }
@@ -1232,6 +1261,49 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--atm-linea)] bg-[var(--atm-fondo)] px-6 py-3"
         >
         <div className="mx-auto w-full max-w-[61rem] rounded-xl border border-[var(--atm-linea)] bg-white p-4 shadow-lg">
+          {/*
+            CONFIRMAR, NO IMPEDIR. Se pregunta una vez y la decisión es suya.
+
+            VA FUERA DEL TERNARIO, y ahí está el fallo que arregla. Vivía dentro de
+            la rama de NO-edición, mientras `ratificar()` la pide desde las DOS: al
+            ratificar desde el editor —el camino de «Ratificar con este
+            pronunciamiento»— se ponía el estado y la confirmación no se
+            renderizaba. Para el médico, pulsar no hacía absolutamente nada: ni
+            petición, ni aviso, ni spinner. 33361146 caía siempre ahí, porque
+            arrastra una advertencia administrativa.
+
+            Aquí se ve venga de donde venga.
+          */}
+          {confirmarAvisos && (
+            <div
+              data-testid="confirmar-avisos"
+              className="mb-3 w-full rounded-lg border border-[var(--atm-obs)] bg-amber-50/60 p-3 text-sm"
+            >
+              <p>
+                Este expediente tiene advertencias sobre sus antecedentes. ¿Ratificar de todos modos
+                con lo que consta?
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={() => setConfirmarAvisos(false)}
+                  className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm"
+                >
+                  Revisar antes
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmadoConAvisos(true);
+                    setConfirmarAvisos(false);
+                    // La decisión viaja por parámetro: el estado aún no se refrescó.
+                    void ratificar(true);
+                  }}
+                  className="rounded-lg bg-[var(--atm-azul)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)]"
+                >
+                  Ratificar de todos modos
+                </button>
+              </div>
+            </div>
+          )}
           {editando && confirmandoDescarte ? (
             /* EL PASO QUE FALTABA. Dice QUÉ se pierde antes de perderlo, y deja
                la salida y la vuelta a la misma distancia. */
@@ -1269,7 +1341,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                   En los dos casos hace falta una evaluación elegida: sin ella no
                   hay nada que proponer ni que firmar. */}
               <button
-                onClick={modo === "resolver" ? ratificar : enviarModificacion}
+                onClick={modo === "resolver" ? () => void ratificar() : enviarModificacion}
                 disabled={busy || !cuerpoListo || faltaMotivo}
                 className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40"
               >
@@ -1328,33 +1400,6 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
                     Puedes ratificar con lo que consta: tu firma emite el documento. Si algo de esto
                     no lo puedes resolver desde la revisión, escálalo a coordinación.
                   </p>
-                </div>
-              )}
-              {/* CONFIRMAR, NO IMPEDIR. Se pregunta una vez y la decisión es suya. */}
-              {confirmarAvisos && (
-                <div className="w-full rounded-lg border border-[var(--atm-linea)] bg-white p-3 text-sm">
-                  <p>
-                    Este expediente tiene advertencias sobre sus antecedentes. ¿Ratificar de todos
-                    modos con lo que consta?
-                  </p>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      onClick={() => setConfirmarAvisos(false)}
-                      className="rounded-lg border border-[var(--atm-linea)] px-3 py-1.5 text-sm"
-                    >
-                      Revisar antes
-                    </button>
-                    <button
-                      onClick={() => {
-                        setConfirmadoConAvisos(true);
-                        setConfirmarAvisos(false);
-                        void ratificar();
-                      }}
-                      className="rounded-lg bg-[var(--atm-azul)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)]"
-                    >
-                      Ratificar de todos modos
-                    </button>
-                  </div>
                 </div>
               )}
               {/*
@@ -1426,7 +1471,7 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
               )}
               {puedeRatificar && (
                 <button
-                  onClick={cap.canApprove ? ratificar : () => abrirFormulario("resolver")}
+                  onClick={cap.canApprove ? () => void ratificar() : () => abrirFormulario("resolver")}
                   disabled={busy || !cap.hasActiveSignature}
                   className="rounded-lg bg-[var(--atm-azul)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--atm-azul2)] disabled:opacity-40"
                 >

@@ -1779,3 +1779,141 @@ describe("PantallaResultado · escalar a coordinación", () => {
     expect(screen.getByText(/tu firma emite el documento/i)).toBeDefined();
   });
 });
+
+
+/**
+ * RATIFICAR DESDE EL EDITOR CON UNA ADVERTENCIA A CUESTAS — el incidente de
+ * 33361146.
+ *
+ * El médico abría el expediente, elegía su evaluación, escribía la conclusión,
+ * pulsaba «Ratificar con este pronunciamiento»… y NO PASABA NADA. Ni petición,
+ * ni aviso, ni spinner.
+ *
+ * LA CAUSA: el paso de confirmación —«¿Ratificar de todos modos?»— vivía dentro
+ * de la rama de NO-edición del ternario de la barra, mientras `ratificar()` lo
+ * pide desde las DOS. Al ratificar desde el editor se ponía el estado y la
+ * confirmación no se renderizaba nunca. Los casos sin advertencias no pasan por
+ * ahí, y por eso ninguna prueba lo vio: todas las del camino feliz venían sin
+ * advertencias.
+ */
+describe("PantallaResultado · ratificar desde el editor con advertencias", () => {
+  const AVISO = {
+    code: "DOCUMENT_COVERAGE_INCOMPLETE",
+    statement: "El expediente no trae todos los antecedentes que la pauta considera.",
+    evidence: "2 documento(s) que la pauta espera no constan",
+    blocksFinalDocument: false,
+  };
+  const CON_AVISO = {
+    canRequestChanges: true,
+    canApprove: false,
+    canResolveAndApprove: true,
+    administrativeWarnings: [AVISO],
+  };
+
+  /** Como `fetchDevolviendo`, pero guarda el cuerpo de cada envío. */
+  async function pintar(caps: Parameters<typeof informe>[0]) {
+    const envios: { url: string; body: string | null }[] = [];
+    const mock = vi.fn(async (url: string, init?: RequestInit) => {
+      envios.push({ url: String(url), body: typeof init?.body === "string" ? init.body : null });
+      return json(String(url).includes("/manual-form") ? FORMULARIO : informe(caps));
+    });
+    vi.stubGlobal("fetch", mock);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+    return { mock, envios };
+  }
+
+  /** Abre el editor y deja dentro un pronunciamiento completo. */
+  async function pronunciarse() {
+    fireEvent.click(screen.getByRole("button", { name: DEFINIR }));
+    await waitFor(() => expect(screen.getByLabelText(/Conclusión general/)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/Conclusión general/), {
+      target: { value: "Conclusión redactada por el profesional." },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /SALUD RECUPERABLE/i }));
+  }
+
+  it("pulsar NO deja la pantalla muda: aparece la confirmación", async () => {
+    await pintar(CON_AVISO);
+    await pronunciarse();
+
+    const confirmar = screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }) as HTMLButtonElement;
+    expect(confirmar.disabled).toBe(false);
+    fireEvent.click(confirmar);
+
+    // ANTES: no ocurría nada. El estado se ponía y su UI vivía en la otra rama.
+    await waitFor(() => expect(screen.getByTestId("confirmar-avisos")).toBeDefined());
+    expect(screen.getByRole("button", { name: /Ratificar de todos modos/i })).toBeDefined();
+  });
+
+  it("al confirmar se envía EXACTAMENTE una petición, con el pronunciamiento", async () => {
+    const { envios } = await pintar(CON_AVISO);
+    await pronunciarse();
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }));
+    await waitFor(() => expect(screen.getByTestId("confirmar-avisos")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /Ratificar de todos modos/i }));
+
+    await waitFor(() => expect(envios.some((e) => e.url.includes("/resolve-and-approve"))).toBe(true));
+    const aprobaciones = envios.filter((e) => e.url.includes("/resolve-and-approve"));
+    expect(aprobaciones).toHaveLength(1);
+    const cuerpo = JSON.parse(String(aprobaciones[0]?.body)) as { assessment: string; conclusion: string };
+    expect(cuerpo.assessment).toBe("RECOVERABLE");
+    expect(cuerpo.conclusion).toBe("Conclusión redactada por el profesional.");
+  });
+
+  it("«Revisar antes» cierra la confirmación y NO envía nada", async () => {
+    const { envios } = await pintar(CON_AVISO);
+    await pronunciarse();
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }));
+    await waitFor(() => expect(screen.getByTestId("confirmar-avisos")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /Revisar antes/i }));
+
+    await waitFor(() => expect(screen.queryByTestId("confirmar-avisos")).toBeNull());
+    expect(envios.some((e) => e.url.includes("/resolve-and-approve"))).toBe(false);
+  });
+
+  it("doble clic en la confirmación no duplica la petición", async () => {
+    const { envios } = await pintar(CON_AVISO);
+    await pronunciarse();
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }));
+    await waitFor(() => expect(screen.getByTestId("confirmar-avisos")).toBeDefined());
+    const definitivo = screen.getByRole("button", { name: /Ratificar de todos modos/i });
+    fireEvent.click(definitivo);
+    fireEvent.click(definitivo);
+
+    await waitFor(() => expect(envios.some((e) => e.url.includes("/resolve-and-approve"))).toBe(true));
+    expect(envios.filter((e) => e.url.includes("/resolve-and-approve"))).toHaveLength(1);
+  });
+
+  it("SIN advertencias no se pregunta nada: va directo", async () => {
+    const { envios } = await pintar({ canRequestChanges: true, canApprove: false, canResolveAndApprove: true });
+    await pronunciarse();
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }));
+
+    await waitFor(() => expect(envios.some((e) => e.url.includes("/resolve-and-approve"))).toBe(true));
+    expect(screen.queryByTestId("confirmar-avisos")).toBeNull();
+  });
+
+  it("un fallo del servidor se lee en cristiano, no en silencio", async () => {
+    const mock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/manual-form")) return json(FORMULARIO);
+      if (init?.method === "POST" && u.includes("/resolve-and-approve")) {
+        return new Response(
+          JSON.stringify({ error: { code: "DOMAIN_RULE_VIOLATED", message: "No tienes una firma cargada.", details: [] } }),
+          { status: 422, headers: { "content-type": "application/json" } },
+        );
+      }
+      return json(informe(CON_AVISO));
+    });
+    vi.stubGlobal("fetch", mock);
+    pintarConQuery(<PantallaResultado caseId="00000000-0000-4000-8000-0000000000ca" />);
+    await waitFor(() => expect(screen.getByText(/Trámite 40252330/)).toBeDefined());
+    await pronunciarse();
+    fireEvent.click(screen.getByRole("button", { name: CONFIRMAR_RESOLUCION }));
+    await waitFor(() => expect(screen.getByTestId("confirmar-avisos")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /Ratificar de todos modos/i }));
+
+    await waitFor(() => expect(screen.getByText(/No tienes una firma cargada/)).toBeDefined());
+  });
+});
