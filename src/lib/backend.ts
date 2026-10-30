@@ -51,7 +51,7 @@ export type CaseClassificationCounts = Record<CaseClassification, number>;
 export interface ManualFormField {
   key: string;
   label: string;
-  kind: "TEXT" | "LONG_TEXT" | "INTEGER" | "CHOICE";
+  kind: "TEXT" | "LONG_TEXT" | "INTEGER" | "CHOICE" | "DATE";
   value: string;
   editable: boolean;
   required: boolean;
@@ -65,7 +65,7 @@ export interface ManualFormField {
 export interface ManualForm {
   reportSnapshotId: string;
   version: number;
-  sections: { id: "I" | "II" | "III" | "IV" | "V"; title: string; fields: ManualFormField[] }[];
+  sections: { id: "I" | "II" | "III" | "IV" | "V" | "VI" | "VII" | "VIII" | "IX"; title: string; fields: ManualFormField[] }[];
 }
 
 /**

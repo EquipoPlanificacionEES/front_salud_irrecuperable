@@ -84,7 +84,7 @@ export function textoDelSistema(f: CampoFormulario): string {
 }
 
 export interface SeccionFormulario {
-  readonly id: "I" | "II" | "III" | "IV" | "V";
+  readonly id: "I" | "II" | "III" | "IV" | "V" | "VI" | "VII" | "VIII" | "IX";
   readonly title: string;
   readonly fields: readonly CampoFormulario[];
 }
