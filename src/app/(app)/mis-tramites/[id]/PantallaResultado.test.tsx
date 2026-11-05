@@ -705,6 +705,7 @@ describe("PantallaResultado · corrección estructurada", () => {
     };
     const v2 = {
       ...v1,
+      id: "nuevo",
       version: 2,
       proposal: { recoverableChecked: false, irrecoverableChecked: true, unresolvedNote: null },
       document: {

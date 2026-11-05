@@ -414,9 +414,9 @@ export function invalidacionesDe(qc: QueryClient) {
      * consulta activa se vuelve a pedir sola al caducarla—, así que quien llama
      * NO tiene que recargar además por su cuenta.
      */
-    informeCorregido: (caseId: string) =>
+    informeCorregido: (caseId: string, opciones?: { informeYaRefrescado?: boolean }) =>
       Promise.all([
-        inv(queryKeys.cases.report(caseId)),
+        opciones?.informeYaRefrescado ? Promise.resolve() : inv(queryKeys.cases.report(caseId)),
         inv(["cases", "manual-form"]),
         inv(queryKeys.doctor.inbox()),
         inv(["reports"]),

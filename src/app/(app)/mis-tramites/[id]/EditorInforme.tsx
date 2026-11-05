@@ -166,6 +166,8 @@ export function cuerpoDeCorreccion(
   const figures: Record<string, number> = {};
   const figureTexts: Record<string, string> = {};
   let clinicalAnalysis: string | undefined;
+  let ohigginsFoundation: string | undefined;
+  let ohigginsObservations: string | undefined;
   let conclusion = "";
   let assessment: "RECOVERABLE" | "IRRECOVERABLE" | null = null;
 
@@ -186,6 +188,17 @@ export function cuerpoDeCorreccion(
     if (f.key === "conclusion" || f.key === "assessment") continue;
     if (f.key === "clinicalAnalysis") {
       clinicalAnalysis = v;
+      continue;
+    }
+    // O'Higgins has two editable narrative sections of its own.  They are
+    // regular ManualReportInput fields on the server; omitting them here made
+    // the UI look editable while silently keeping the previous text.
+    if (f.key === "ohigginsFoundation") {
+      ohigginsFoundation = v;
+      continue;
+    }
+    if (f.key === "ohigginsObservations") {
+      ohigginsObservations = v;
       continue;
     }
     // `Number("")` es 0: un campo vaciado NO es un cero escrito por el médico.
@@ -209,6 +222,8 @@ export function cuerpoDeCorreccion(
     assessment,
     conclusion,
     ...(clinicalAnalysis !== undefined ? { clinicalAnalysis } : {}),
+    ...(ohigginsFoundation !== undefined ? { ohigginsFoundation } : {}),
+    ...(ohigginsObservations !== undefined ? { ohigginsObservations } : {}),
     ...(Object.keys(figures).length ? { figures } : {}),
     ...(Object.keys(figureTexts).length ? { figureTexts } : {}),
     ...(Object.keys(identity).length ? { identity } : {}),

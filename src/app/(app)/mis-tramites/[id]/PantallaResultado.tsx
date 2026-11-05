@@ -536,18 +536,25 @@ export function PantallaResultado({ caseId }: { caseId: string }) {
           },
         },
       );
+      // The response creates a new immutable snapshot.  Refetch it before
+      // leaving the editor so the doctor immediately sees the values just
+      // saved, rather than the previous snapshot kept in the active query.
+      // This also closes the race where a second action could be based on the
+      // stale report while invalidation was still running in the background.
+      const vigente = await cargar();
+      if (r.newReportSnapshotId && vigente?.id !== r.newReportSnapshotId) {
+        throw new Error("El informe actualizado no quedó disponible todavía. Recarga el expediente antes de continuar.");
+      }
       setModo("ver");
       /**
-       * Caduca lo que ESTA acción cambió, y nada más: el informe del caso, su
-       * formulario, la bandeja del médico y el listado. Los lotes, los usuarios
-       * o la carga de otros profesionales no los tocó nadie.
-       *
-       * Caducar el informe basta para que la ficha pase a mostrar la versión
-       * NUEVA —con la conclusión y la casilla del médico—: la consulta está
-       * activa y se vuelve a pedir sola. No hace falta recargar aparte, y
-       * hacerlo pedía el mismo documento dos veces.
+       * Caduca lo que ESTA acción cambió, y nada más: el formulario de esta
+       * versión, la bandeja del médico y el listado. El informe ya fue
+       * refrescado y validado arriba, por eso no se vuelve a pedir aquí.
+       * Los lotes, los usuarios o la carga de otros profesionales no los tocó
+       * nadie. La consulta del informe ya contiene la versión NUEVA —con la
+       * conclusión y la casilla del médico— antes de que el editor se cierre.
        */
-      await invalidar.informeCorregido(caseId);
+      await invalidar.informeCorregido(caseId, { informeYaRefrescado: true });
       setMsg({
         ok: true,
         texto: r.newVersion

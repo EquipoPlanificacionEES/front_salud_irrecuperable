@@ -192,6 +192,38 @@ describe("cuerpo que se envía", () => {
       assessment: "RECOVERABLE",
     });
   });
+
+  it("envía las narrativas propias de O'Higgins en vez de conservar las antiguas", () => {
+    const form: FormularioInforme = {
+      ...FORM,
+      sections: [
+        ...FORM.sections,
+        {
+          id: "VI",
+          title: "VI. FUNDAMENTACIÓN",
+          fields: [campo("ohigginsFoundation", "Fundamentación", "LONG_TEXT", "Fundamentación anterior.")],
+        },
+        {
+          id: "VII",
+          title: "VII. OBSERVACIONES",
+          fields: [campo("ohigginsObservations", "Observaciones", "LONG_TEXT", "Observaciones anteriores.")],
+        },
+      ],
+    };
+    const cuerpo = cuerpoDeCorreccion(form, {
+      ...borradorInicial(form),
+      valores: {
+        ...borradorInicial(form).valores,
+        assessment: "RECOVERABLE",
+        ohigginsFoundation: "Fundamentación nueva.",
+        ohigginsObservations: "Observaciones nuevas.",
+      },
+    });
+    expect(cuerpo).toMatchObject({
+      ohigginsFoundation: "Fundamentación nueva.",
+      ohigginsObservations: "Observaciones nuevas.",
+    });
+  });
 });
 
 describe("edición segura · formulario lleno, cambiar un campo", () => {
