@@ -243,6 +243,7 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
             value={reemplazarDocumentId}
             disabled={enviando || cargandoDocumentos}
             onChange={(e) => setReemplazarDocumentId(e.target.value)}
+            onInput={(e) => setReemplazarDocumentId(e.currentTarget.value)}
           >
             <option value="">
               {cargandoDocumentos ? "Cargando documentos…" : "Selecciona el documento incorrecto…"}
