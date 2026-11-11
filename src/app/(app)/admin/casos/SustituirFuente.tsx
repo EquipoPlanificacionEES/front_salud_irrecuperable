@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
-import { useInvalidar } from "@/lib/queries";
+import { useCaseDocuments, useInvalidar } from "@/lib/queries";
 import type { OperationalCase } from "@/lib/backend";
 import { Aviso, Btn, Campo, Textarea } from "../ui";
 
@@ -89,6 +89,7 @@ interface Props {
 export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
   const [archivo, setArchivo] = useState<File | null>(null);
   const [nota, setNota] = useState("");
+  const [reemplazarDocumentId, setReemplazarDocumentId] = useState("");
   const [resolverIncidencia, setResolverIncidencia] = useState(true);
   const [reprocesar, setReprocesar] = useState(true);
   const [enviando, setEnviando] = useState(false);
@@ -96,10 +97,23 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
   const [fase, setFase] = useState<"subiendo" | "validando" | null>(null);
   const [progreso, setProgreso] = useState(0);
   const invalidar = useInvalidar();
+  const demasiadoGrande = archivo !== null && archivo.size > MAX_BYTES;
+  // No consultamos documentos hasta que hay un PDF válido seleccionado. Esto
+  // mantiene la validación local de tamaño sin provocar una llamada de red
+  // para un archivo que ya sabemos que no se puede enviar.
+  const { data: documentosCaso, isPending: cargandoDocumentos } = useCaseDocuments(caso.caseId, {
+    enabled: archivo !== null && !demasiadoGrande,
+  });
+  const documentosVigentes = documentosCaso?.documents ?? [];
+  const requiereDocumentoObjetivo = documentosCaso !== undefined && documentosVigentes.length > 1;
 
   const notaValida = nota.trim().length >= 10;
-  const demasiadoGrande = archivo !== null && archivo.size > MAX_BYTES;
-  const puedeEnviar = archivo !== null && !demasiadoGrande && notaValida && !enviando;
+  const puedeEnviar =
+    archivo !== null &&
+    !demasiadoGrande &&
+    notaValida &&
+    !enviando &&
+    (!requiereDocumentoObjetivo || reemplazarDocumentId !== "");
   const firmado = Boolean(caso.report?.signedAt);
 
   /**
@@ -154,6 +168,7 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
           json: {
             note: nota.trim(),
             reprocess: reprocesar,
+            ...(reemplazarDocumentId ? { replacesDocumentId: reemplazarDocumentId } : {}),
             // El id de la incidencia no lo compone el cliente: el backend lo
             // valida contra el caso, y si no es suya responde 404.
             ...(resolverIncidencia && caso.hold?.holdId
@@ -207,6 +222,30 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
           }}
         />
       </Campo>
+
+      {requiereDocumentoObjetivo && (
+        <Campo
+          label="Documento que se reemplaza"
+          hint="El resto de los documentos vigentes se conserva sin cambios."
+        >
+          <select
+            aria-label="Documento que se reemplaza"
+            className="w-full rounded border border-[var(--atm-linea)] bg-white px-2 py-1.5 text-xs"
+            value={reemplazarDocumentId}
+            disabled={enviando || cargandoDocumentos}
+            onChange={(e) => setReemplazarDocumentId(e.target.value)}
+          >
+            <option value="">
+              {cargandoDocumentos ? "Cargando documentos…" : "Selecciona el documento incorrecto…"}
+            </option>
+            {documentosVigentes.map((doc) => (
+              <option key={doc.documentId} value={doc.documentId}>
+                {doc.fileName} · {doc.documentClass ?? doc.documentType}
+              </option>
+            ))}
+          </select>
+        </Campo>
+      )}
 
       {archivo && (
         <p className="text-xs text-zinc-600">
@@ -286,6 +325,9 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
           {enviando ? (fase === "validando" ? "Validando…" : "Subiendo…") : "Sustituir expediente"}
         </Btn>
         {archivo === null && <span className="text-xs text-zinc-500">Elige el PDF corregido.</span>}
+        {requiereDocumentoObjetivo && !reemplazarDocumentId && (
+          <span className="text-xs text-amber-700">Selecciona qué documento se sustituye.</span>
+        )}
       </div>
     </div>
   );
