@@ -172,7 +172,9 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
         reemplazarDocumentId || reemplazarDocumentSelect.current?.value || "";
       const completePath =
         `/admin/cases/${caso.caseId}/source-document/uploads/${sesion.uploadId}/complete` +
-        (objetivoReemplazo ? `?replacesDocumentId=${encodeURIComponent(objetivoReemplazo)}` : "");
+        (objetivoReemplazo
+          ? `/${encodeURIComponent(objetivoReemplazo)}?replacesDocumentId=${encodeURIComponent(objetivoReemplazo)}`
+          : "");
       const r = await api<{ newSha256: string; processingJobId: string | null }>(
         completePath,
         {
