@@ -51,7 +51,13 @@ interface Llamada {
   body: unknown;
 }
 
-function backend(opciones: { chunkSize?: number; fallaEn?: string } = {}) {
+function backend(
+  opciones: {
+    chunkSize?: number;
+    fallaEn?: string;
+    documentos?: Array<Record<string, unknown>>;
+  } = {},
+) {
   const llamadas: Llamada[] = [];
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
@@ -67,6 +73,15 @@ function backend(opciones: { chunkSize?: number; fallaEn?: string } = {}) {
         { error: { code: "CONFLICT", message: "falló", details: [{ issue: "SHA256_MISMATCH" }] } },
         409,
       );
+    }
+    if (u.includes("/documents") && opciones.documentos) {
+      return json({
+        caseId: CASO.caseId,
+        ingestionMode: "MULTI_DOCUMENT_CASE",
+        documents: opciones.documentos,
+        superseded: [],
+        coverage: { received: opciones.documentos.length, processed: opciones.documentos.length, failed: 0 },
+      });
     }
     if (u.includes("/source-document/uploads") && u.includes("/complete")) {
       return json({ newSha256: "a".repeat(64), processingJobId: "job-1" });
@@ -197,6 +212,51 @@ describe("Sustituir expediente · subida por partes", () => {
     expect(cuerpo["note"]).toBe(NOTA);
     expect(cuerpo["reprocess"]).toBe(true);
     expect(cuerpo["resolveHoldId"]).toBe(CASO.hold?.holdId);
+  });
+
+  it("envía el documento objetivo en un expediente multi-documento", async () => {
+    const { fetchMock, llamadas } = backend({
+      documentos: [
+        {
+          documentId: "00000000-0000-4000-8000-0000000000cc",
+          fileName: "original.pdf",
+          documentType: "ADMINISTRATIVE",
+          documentClass: "ADMINISTRATIVE",
+          status: "PROCESSED",
+          byteSize: 100,
+          receivedAt: null,
+          downloadUrl: "",
+          warnings: [],
+        },
+        {
+          documentId: "00000000-0000-4000-8000-0000000000cd",
+          fileName: "otro.pdf",
+          documentType: "CLINICAL",
+          documentClass: "CLINICAL",
+          status: "PROCESSED",
+          byteSize: 100,
+          receivedAt: null,
+          downloadUrl: "",
+          warnings: [],
+        },
+      ],
+    });
+    pintar(fetchMock);
+
+    elegir(pdf(1000));
+    await waitFor(() => expect(llamadas.some((l) => l.url.includes("/documents"))).toBe(true));
+    await waitFor(() => expect(screen.getByLabelText("Documento que se reemplaza")).toBeDefined());
+    fireEvent.change(screen.getByLabelText("Documento que se reemplaza"), {
+      target: { value: "00000000-0000-4000-8000-0000000000cc" },
+    });
+    escribirNota();
+    fireEvent.click(boton());
+
+    await waitFor(() => expect(llamadas.some((l) => l.url.includes("/complete"))).toBe(true));
+    const complete = llamadas.find((l) => l.url.includes("/complete"));
+    expect(JSON.parse(String(complete?.body))["replacesDocumentId"]).toBe(
+      "00000000-0000-4000-8000-0000000000cc",
+    );
   });
 
   it("muestra el progreso mientras sube y avisa al validar", async () => {

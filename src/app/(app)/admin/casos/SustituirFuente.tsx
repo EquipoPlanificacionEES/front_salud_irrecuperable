@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, ApiFallo } from "@/lib/api";
 import { useCaseDocuments, useInvalidar } from "@/lib/queries";
 import type { OperationalCase } from "@/lib/backend";
@@ -96,6 +96,7 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [fase, setFase] = useState<"subiendo" | "validando" | null>(null);
   const [progreso, setProgreso] = useState(0);
+  const reemplazarDocumentSelect = useRef<HTMLSelectElement>(null);
   const invalidar = useInvalidar();
   const demasiadoGrande = archivo !== null && archivo.size > MAX_BYTES;
   // No consultamos documentos hasta que hay un PDF válido seleccionado. Esto
@@ -162,13 +163,20 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
       }
 
       setFase("validando");
+      // El selector es un control nativo y algunas capas de automatización o
+      // navegadores pueden actualizar el valor visible antes de que React
+      // publique el estado de onChange. Leerlo aquí evita enviar una
+      // sustitución multi-documento sin objetivo aunque el usuario ya lo haya
+      // seleccionado en pantalla.
+      const objetivoReemplazo =
+        reemplazarDocumentId || reemplazarDocumentSelect.current?.value || "";
       const r = await api<{ newSha256: string; processingJobId: string | null }>(
         `/admin/cases/${caso.caseId}/source-document/uploads/${sesion.uploadId}/complete`,
         {
           json: {
             note: nota.trim(),
             reprocess: reprocesar,
-            ...(reemplazarDocumentId ? { replacesDocumentId: reemplazarDocumentId } : {}),
+            ...(objetivoReemplazo ? { replacesDocumentId: objetivoReemplazo } : {}),
             // El id de la incidencia no lo compone el cliente: el backend lo
             // valida contra el caso, y si no es suya responde 404.
             ...(resolverIncidencia && caso.hold?.holdId
@@ -230,6 +238,7 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
         >
           <select
             aria-label="Documento que se reemplaza"
+            ref={reemplazarDocumentSelect}
             className="w-full rounded border border-[var(--atm-linea)] bg-white px-2 py-1.5 text-xs"
             value={reemplazarDocumentId}
             disabled={enviando || cargandoDocumentos}
