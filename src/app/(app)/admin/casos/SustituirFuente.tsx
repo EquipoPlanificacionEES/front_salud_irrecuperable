@@ -135,6 +135,10 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
     setFase("subiendo");
     try {
       const expectedSha256 = await sha256De(archivo);
+      // El objetivo viaja desde la apertura de la carga: así sobrevive aunque
+      // una capa intermedia pierda headers durante los chunks o el complete.
+      const objetivoReemplazo =
+        reemplazarDocumentId || reemplazarDocumentSelect.current?.value || "";
 
       const sesion = await api<{ uploadId: string; chunkSize: number }>(
         `/admin/cases/${caso.caseId}/source-document/uploads`,
@@ -143,6 +147,7 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
             fileName: archivo.name,
             expectedSize: archivo.size,
             expectedSha256,
+            ...(objetivoReemplazo ? { replacesDocumentId: objetivoReemplazo } : {}),
           },
         },
       );
@@ -153,9 +158,6 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
       // publique el estado de onChange. Leerlo aquí evita enviar una
       // sustitución multi-documento sin objetivo aunque el usuario ya lo haya
       // seleccionado en pantalla.
-      const objetivoReemplazo =
-        reemplazarDocumentId || reemplazarDocumentSelect.current?.value || "";
-
       for (let i = 0; i < total; i++) {
         const trozo = archivo.slice(i * tam, Math.min((i + 1) * tam, archivo.size));
         await api(
