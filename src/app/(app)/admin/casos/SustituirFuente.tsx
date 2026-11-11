@@ -173,6 +173,7 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
       const r = await api<{ newSha256: string; processingJobId: string | null }>(
         `/admin/cases/${caso.caseId}/source-document/uploads/${sesion.uploadId}/complete`,
         {
+          headers: objetivoReemplazo ? { "x-replaces-document-id": objetivoReemplazo } : undefined,
           json: {
             note: nota.trim(),
             reprocess: reprocesar,
