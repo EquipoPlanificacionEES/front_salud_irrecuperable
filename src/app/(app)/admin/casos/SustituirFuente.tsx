@@ -170,8 +170,11 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
       // seleccionado en pantalla.
       const objetivoReemplazo =
         reemplazarDocumentId || reemplazarDocumentSelect.current?.value || "";
+      const completePath =
+        `/admin/cases/${caso.caseId}/source-document/uploads/${sesion.uploadId}/complete` +
+        (objetivoReemplazo ? `?replacesDocumentId=${encodeURIComponent(objetivoReemplazo)}` : "");
       const r = await api<{ newSha256: string; processingJobId: string | null }>(
-        `/admin/cases/${caso.caseId}/source-document/uploads/${sesion.uploadId}/complete`,
+        completePath,
         {
           headers: objetivoReemplazo ? { "x-replaces-document-id": objetivoReemplazo } : undefined,
           json: {
