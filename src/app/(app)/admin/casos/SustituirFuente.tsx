@@ -148,6 +148,13 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
       );
       const tam = sesion.chunkSize > 0 ? sesion.chunkSize : CHUNK_POR_DEFECTO;
       const total = Math.ceil(archivo.size / tam);
+      // El selector es un control nativo y algunas capas de automatización o
+      // navegadores pueden actualizar el valor visible antes de que React
+      // publique el estado de onChange. Leerlo aquí evita enviar una
+      // sustitución multi-documento sin objetivo aunque el usuario ya lo haya
+      // seleccionado en pantalla.
+      const objetivoReemplazo =
+        reemplazarDocumentId || reemplazarDocumentSelect.current?.value || "";
 
       for (let i = 0; i < total; i++) {
         const trozo = archivo.slice(i * tam, Math.min((i + 1) * tam, archivo.size));
@@ -156,20 +163,16 @@ export function SustituirFuente({ caso, onCerrar, onHecho }: Props) {
           {
             method: "PUT",
             body: await trozo.arrayBuffer(),
-            headers: { "Content-Type": "application/octet-stream" },
+            headers: {
+              "Content-Type": "application/octet-stream",
+              ...(objetivoReemplazo ? { "x-replaces-document-id": objetivoReemplazo } : {}),
+            },
           },
         );
         setProgreso(Math.round(((i + 1) / total) * 100));
       }
 
       setFase("validando");
-      // El selector es un control nativo y algunas capas de automatización o
-      // navegadores pueden actualizar el valor visible antes de que React
-      // publique el estado de onChange. Leerlo aquí evita enviar una
-      // sustitución multi-documento sin objetivo aunque el usuario ya lo haya
-      // seleccionado en pantalla.
-      const objetivoReemplazo =
-        reemplazarDocumentId || reemplazarDocumentSelect.current?.value || "";
       const completePath =
         `/admin/cases/${caso.caseId}/source-document/uploads/${sesion.uploadId}/complete` +
         (objetivoReemplazo
